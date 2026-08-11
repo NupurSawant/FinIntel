@@ -16,8 +16,6 @@
 .env.development.local
 .env.test.local
 .env.production.local
-.streamlit/secrets.toml
-frontend/.streamlit/secrets.toml
 !pyproject.toml
 !**/pyproject.toml
 
