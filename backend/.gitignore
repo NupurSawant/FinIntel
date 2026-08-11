@@ -1,0 +1,54 @@
+# =====================================================================
+# BACKEND GIT IGNORE CONFIGURATION
+# =====================================================================
+# Prevents sensitive backend environment files, local SQLite databases,
+# uploaded PDFs/SQL files, virtual environments, and Python caches
+# from being committed to Git repository.
+
+# ---------------------------------------------------------------------
+# 1. Environment Credentials & API Keys (CRITICAL - DO NOT COMMIT)
+# ---------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+.env.local
+
+# ---------------------------------------------------------------------
+# 2. Local Databases & Vector Storage
+# ---------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+data/db/*.db
+qdrant_storage/
+
+# ---------------------------------------------------------------------
+# 3. Uploaded Financial Documents & SQL Scripts
+# ---------------------------------------------------------------------
+data/documents/*
+!data/documents/.gitkeep
+data/sql_uploads/*
+!data/sql_uploads/.gitkeep
+
+# ---------------------------------------------------------------------
+# 4. Python Environment & Bytecode Caches
+# ---------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------
+# 5. Runtime Logs & System Cache
+# ---------------------------------------------------------------------
+*.log
+logs/
+.DS_Store
+Thumbs.db

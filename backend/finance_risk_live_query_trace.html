@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Finance Risk & Investment Intelligence — Architecture & Live Query Trace</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#0B0F17;
+    --panel:#111827;
+    --panel-2:#0E1420;
+    --border:#232D3F;
+    --text:#E7EBF3;
+    --muted:#7C879C;
+    --muted-dim:#4B5568;
+    --idle:#2B3548;
+
+    --c-safe:#4FD1C5;
+    --c-blocked:#F2545B;
+    --c-revise:#F5B942;
+    --c-human:#9B8CFF;
+    --c-final:#35D399;
+    --c-crew:#6C8EF5;
+    --c-store:#E5C07B;
+    --c-ollama:#FF7B9C;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:'IBM Plex Mono', monospace;
+    -webkit-font-smoothing:antialiased;
+  }
+  .bg-grid{
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.045) 1px, transparent 1.4px);
+    background-size:26px 26px;
+  }
+
+  .wrap{ position:relative; z-index:1; max-width:1600px; margin:0 auto; padding:24px 20px 50px; }
+
+  header{ margin-bottom:18px; }
+  .eyebrow{
+    font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:8px; display:flex; align-items:center; gap:8px;
+  }
+  .eyebrow .dot{ width:6px; height:6px; border-radius:50%; background:var(--c-final); box-shadow:0 0 8px var(--c-final); }
+  h1{
+    font-family:'Space Grotesk', sans-serif; font-weight:700;
+    font-size:clamp(22px,3vw,30px); margin:0 0 6px; letter-spacing:-0.01em;
+  }
+  .sub{ color:var(--muted); font-size:13px; line-height:1.6; max-width:1050px; }
+  .sub b{ color:var(--text); font-weight:600; }
+
+  /* ---- controls ---- */
+  .controls{
+    display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+    margin:18px 0 20px; padding:14px 16px; background:var(--panel);
+    border:1px solid var(--border); border-radius:10px;
+  }
+  .scenario-btns{ display:flex; flex-wrap:wrap; gap:8px; }
+  button.scn{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; font-weight:500;
+    color:var(--text); background:var(--panel-2); border:1px solid var(--border);
+    padding:7px 11px; border-radius:7px; cursor:pointer; display:flex; align-items:center; gap:7px;
+    transition:border-color .15s, transform .1s, background .15s;
+  }
+  button.scn:hover:not(:disabled){ border-color:var(--muted); background:#162032; }
+  button.scn:active:not(:disabled){ transform:scale(0.98); }
+  button.scn:disabled{ opacity:.4; cursor:not-allowed; }
+  button.scn .sw{ width:8px; height:8px; border-radius:50%; flex:none; }
+
+  .divider{ width:1px; height:26px; background:var(--border); margin:0 2px; }
+
+  .query-input-row{ display:flex; gap:8px; flex:1; min-width:280px; }
+  input#customQuery{
+    flex:1; font-family:'IBM Plex Mono',monospace; font-size:12px;
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:8px 12px; border-radius:7px; outline:none;
+  }
+  input#customQuery:focus{ border-color:var(--c-safe); }
+  input#customQuery::placeholder{ color:var(--muted-dim); }
+
+  button#runCustom, button#resetBtn{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600;
+    padding:8px 14px; border-radius:7px; cursor:pointer; border:1px solid transparent;
+  }
+  button#runCustom{ background:var(--c-safe); color:#03211E; }
+  button#runCustom:hover:not(:disabled){ background:#3eb8ad; }
+  button#runCustom:disabled{ opacity:.4; cursor:not-allowed; }
+  button#resetBtn{ background:transparent; border:1px solid var(--border); color:var(--muted); }
+  button#resetBtn:hover{ color:var(--text); border-color:var(--muted); }
+
+  /* ---- main layout ---- */
+  .main{ display:grid; grid-template-columns:1.75fr 1fr; gap:18px; align-items:start; }
+  @media (max-width:1100px){ .main{ grid-template-columns:1fr; } }
+
+  .diagram-panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:10px; overflow:hidden; position:relative;
+  }
+  svg#diagram{ width:100%; height:auto; display:block; }
+
+  /* svg node styling */
+  .node rect, .node polygon, .node path{
+    fill:var(--panel-2); stroke:var(--idle); stroke-width:1.6px;
+    transition:stroke .25s ease, filter .25s ease, fill .25s ease;
+  }
+  .node text{
+    fill:var(--text); font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:500;
+    text-anchor:middle; dominant-baseline:middle; pointer-events:none;
+  }
+  .node .sub-label{ fill:var(--muted); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; }
+  .node.active rect, .node.active polygon, .node.active path{ filter:drop-shadow(0 0 12px var(--glow,var(--c-safe))); stroke:var(--glow,var(--c-safe)); fill:#132030; }
+  .node.done rect, .node.done polygon, .node.done path{ stroke:var(--glow,var(--c-safe)); opacity:.95; }
+
+  .crew-bg{ fill:rgba(108,142,245,0.04); stroke:rgba(108,142,245,0.3); stroke-width:1.4px; stroke-dasharray:6 5; }
+  .crew-label{ fill:var(--c-crew); font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:600; }
+
+  polyline.edge, path.edge{ fill:none; stroke:var(--idle); stroke-width:2px; transition:stroke .2s ease; }
+  polyline.edge.dashed, path.edge.dashed{ stroke-dasharray:6 5; }
+  polyline.edge.lit, path.edge.lit{ filter:drop-shadow(0 0 6px currentColor); }
+
+  .edge-label{ fill:var(--muted); font-size:9.5px; font-weight:500; }
+
+  circle.packet{ filter:drop-shadow(0 0 7px currentColor); }
+
+  /* ---- side panels ---- */
+  .side{ display:flex; flex-direction:column; gap:14px; }
+  .panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:14px 16px;
+  }
+  .panel h3{
+    font-family:'Space Grotesk',sans-serif; font-size:12px; margin:0 0 10px;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .status-badge{
+    font-size:10px; padding:3px 9px; border-radius:20px; font-weight:600;
+    letter-spacing:.04em; text-transform:uppercase;
+  }
+
+  .kv{ display:grid; grid-template-columns:auto 1fr; gap:6px 12px; font-size:12px; }
+  .kv .k{ color:var(--muted); }
+  .kv .v{ color:var(--text); text-align:right; word-break:break-word; }
+
+  .conf-bar-track{ height:7px; border-radius:4px; background:var(--panel-2); overflow:hidden; margin-top:6px; }
+  .conf-bar-fill{ height:100%; width:0%; background:var(--muted-dim); transition:width .5s ease, background .3s ease; }
+  .conf-thresh-line{ position:relative; }
+  .conf-thresh-line::after{
+    content:''; position:absolute; top:-9px; height:22px; width:2px; background:var(--muted);
+    left:70%;
+  }
+
+  #log{
+    font-size:11.5px; line-height:1.65; height:340px; overflow-y:auto;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px;
+  }
+  #log::-webkit-scrollbar{ width:6px; }
+  #log::-webkit-scrollbar-thumb{ background:var(--idle); border-radius:3px; }
+  .log-line{ display:flex; gap:8px; margin-bottom:4px; }
+  .log-line .ts{ color:var(--muted-dim); flex:none; }
+  .log-line .msg{ color:var(--text); }
+  .log-line.hl-safe .msg{ color:var(--c-safe); }
+  .log-line.hl-blocked .msg{ color:var(--c-blocked); }
+  .log-line.hl-revise .msg{ color:var(--c-revise); }
+  .log-line.hl-human .msg{ color:var(--c-human); }
+  .log-line.hl-final .msg{ color:var(--c-final); }
+  .log-line.hl-crew .msg{ color:var(--c-crew); }
+  .log-line.hl-store .msg{ color:var(--c-store); }
+  .log-line.hl-ollama .msg{ color:var(--c-ollama); }
+
+  .legend{ display:flex; flex-wrap:wrap; gap:10px 14px; font-size:11px; color:var(--muted); }
+  .legend .item{ display:flex; align-items:center; gap:6px; }
+  .legend .sw{ width:9px; height:9px; border-radius:50%; flex:none; }
+
+  footer{ margin-top:24px; color:var(--muted-dim); font-size:11px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span class="dot"></span> LIVE ARCHITECTURE QUERY TRACE · SYSTEM FLOW MONITOR</div>
+    <h1>Finance Risk &amp; Investment Intelligence System</h1>
+    <div class="sub">Observe real-time query execution: <b>Guardrail Check → Pre-Router (Ollama Direct vs Single-Agent Delegation) → Physical Data Store Query → Reflection/Critic Node → Route Decision</b>. Manager calls <i>exactly one</i> specialist agent per query.</div>
+  </header>
+
+  <div class="controls">
+    <div class="scenario-btns">
+      <button class="scn" data-scn="direct"><span class="sw" style="background:var(--c-ollama)"></span>1. Direct Ollama Answer</button>
+      <button class="scn" data-scn="sql_db"><span class="sw" style="background:var(--c-store)"></span>2. SQL Agent + Finance DB</button>
+      <button class="scn" data-scn="rag_doc"><span class="sw" style="background:var(--c-safe)"></span>3. RAG Agent + Qdrant DB</button>
+      <button class="scn" data-scn="market_api"><span class="sw" style="background:var(--c-crew)"></span>4. Market Agent + Live APIs</button>
+      <button class="scn" data-scn="risk_engine"><span class="sw" style="background:var(--c-store)"></span>5. Risk Agent + Analytics</button>
+      <button class="scn" data-scn="unsafe"><span class="sw" style="background:var(--c-blocked)"></span>6. Guardrail Blocked</button>
+      <button class="scn" data-scn="revise_ok"><span class="sw" style="background:var(--c-revise)"></span>7. Revise Loop (1 Agent)</button>
+      <button class="scn" data-scn="revise_escalate"><span class="sw" style="background:var(--c-human)"></span>8. Human Handoff (1 Agent)</button>
+    </div>
+    <div class="divider"></div>
+    <div class="query-input-row">
+      <input id="customQuery" type="text" placeholder="Type your query, e.g. 'Show total asset value from portfolio holdings table'" />
+      <button id="runCustom">Run Trace</button>
+    </div>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div class="main">
+    <div class="diagram-panel">
+      <svg id="diagram" viewBox="0 0 1350 1300" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <h3>Execution State <span class="status-badge" id="statusBadge" style="background:var(--idle);color:#0B0F17;">IDLE</span></h3>
+        <div class="kv" id="stateKV">
+          <div class="k">Query</div><div class="v" id="v-query">—</div>
+          <div class="k">Guardrail</div><div class="v" id="v-guardrail">—</div>
+          <div class="k">Pre-Router</div><div class="v" id="v-router">—</div>
+          <div class="k">Intent</div><div class="v" id="v-intents">—</div>
+          <div class="k">Delegated Agent</div><div class="v" id="v-agents">—</div>
+          <div class="k">Data Store</div><div class="v" id="v-stores">—</div>
+          <div class="k">Revise Count</div><div class="v" id="v-revise">0 / 3</div>
+          <div class="k">Route</div><div class="v" id="v-route">—</div>
+        </div>
+        <div style="margin-top:10px;">
+          <div class="kv"><div class="k">Confidence</div><div class="v" id="v-conf">—</div></div>
+          <div class="conf-bar-track conf-thresh-line"><div class="conf-bar-fill" id="confFill"></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Execution Log</h3>
+        <div id="log"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Legend</h3>
+        <div class="legend">
+          <div class="item"><span class="sw" style="background:var(--c-safe)"></span>Safe / In-Flight</div>
+          <div class="item"><span class="sw" style="background:var(--c-ollama)"></span>Direct Ollama</div>
+          <div class="item"><span class="sw" style="background:var(--c-crew)"></span>Manager & Agent</div>
+          <div class="item"><span class="sw" style="background:var(--c-store)"></span>Data Store / DB</div>
+          <div class="item"><span class="sw" style="background:var(--c-blocked)"></span>Blocked</div>
+          <div class="item"><span class="sw" style="background:var(--c-revise)"></span>Revise Loop</div>
+          <div class="item"><span class="sw" style="background:var(--c-human)"></span>Human Handoff</div>
+          <div class="item"><span class="sw" style="background:var(--c-final)"></span>Final / Approved</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Finance Risk &amp; Investment Intelligence System — Reference Architecture Trace Monitor.</footer>
+</div>
+
+<script>
+(function(){
+
+/* ============================== CONFIG & GEOMETRY ============================== */
+
+const CONFIDENCE_THRESHOLD = 0.70;
+const MAX_RETRIES = 3;
+
+// Layout geometry cleanly separated with 0 node/edge overlaps
+const NODES = {
+  userQuery:       { x:670, y:50,  w:220, h:48, shape:'pill', label:'User Query' },
+  guardrail:       { x:670, y:145, w:270, h:56, shape:'rect', label:'Guardrail Check', sub:'8-Rule Safety Engine' },
+
+  blocked:         { x:160, y:260, w:160, h:48, shape:'pill', label:'Blocked', sub:'Policy Violation' },
+  router:          { x:670, y:260, w:270, h:100, shape:'diamond', label:'Pre-Router (Ollama)', sub:'Simple vs Complex?' },
+  directOllama:    { x:1070, y:260, w:210, h:52, shape:'rect', label:'Direct Ollama Answer', sub:'Bypasses Crew (<1s)' },
+
+  crewBg:          { x:80,  y:345, w:1180, h:395 }, // background container for Crew_Node
+
+  manager:         { x:670, y:395, w:220, h:50, shape:'rect', label:'Manager Agent', sub:'Task Orchestrator' },
+
+  ragAgent:        { x:220, y:495, w:160, h:54, shape:'rect', label:'RAG Agent' },
+  marketAgent:     { x:470, y:495, w:160, h:54, shape:'rect', label:'Market Agent' },
+  sqlAgent:        { x:870, y:495, w:160, h:54, shape:'rect', label:'SQL Agent' },
+  riskAgent:       { x:1070, y:495, w:160, h:54, shape:'rect', label:'Risk Agent' },
+
+  ragDocStore:     { x:220, y:650, w:170, h:60, shape:'cylinder', label:'Qdrant Vector DB', sub:'PDFs & Vision AI' },
+  marketApiStore:  { x:470, y:650, w:170, h:60, shape:'rect', label:'Tavily & yfinance', sub:'Live Market APIs' },
+  sqlDbStore:      { x:870, y:650, w:170, h:60, shape:'cylinder', label:'Finance SQL DB', sub:'SQLite / Postgres' },
+  riskEngineStore: { x:1070, y:650, w:170, h:60, shape:'rect', label:'Risk Engine', sub:'VaR / Volatility Analytics' },
+
+  critic:          { x:670, y:863, w:280, h:56, shape:'rect', label:'Reflection / Critic Node', sub:'Quality & Accuracy Check' },
+  route:           { x:670, y:1020, w:280, h:110, shape:'diamond', label:'Route Decision', sub:'Confidence ≥ 0.70?' },
+
+  humanHandoff:    { x:990, y:1100, w:200, h:50, shape:'pill', label:'Human Handoff', sub:'Max Retries Reached' },
+  finalResponse:   { x:670, y:1220, w:260, h:56, shape:'pill', label:'Final Response', sub:'Delivered to User' },
+};
+
+const AGENT_NAMES = {
+  ragAgent:'RAG Agent', marketAgent:'Market Agent', sqlAgent:'SQL Agent', riskAgent:'Risk Agent'
+};
+const STORE_NAMES = {
+  ragDocStore:'Qdrant Vector DB', marketApiStore:'Tavily & yfinance APIs',
+  sqlDbStore:'Finance SQL Database', riskEngineStore:'Risk Models Engine'
+};
+
+// Polyline paths with dedicated outer channels (X=1235 for Ollama, X=1300 for Revise Loop) to guarantee ZERO line overlaps
+const EDGES = {
+  q_guardrail:      { pts:[[670,74],[670,117]] },
+  guardrail_blocked:{ pts:[[535,145],[160,145],[160,236]] },
+  guardrail_router: { pts:[[670,173],[670,210]] },
+
+  router_direct:    { pts:[[805,260],[965,260]] },
+  router_manager:   { pts:[[670,310],[670,370]] },
+
+  manager_rag:      { pts:[[670,420],[670,440],[220,440],[220,468]] },
+  manager_market:   { pts:[[670,420],[670,440],[470,440],[470,468]] },
+  manager_sql:      { pts:[[670,420],[670,440],[870,440],[870,468]] },
+  manager_risk:     { pts:[[670,420],[670,440],[1070,440],[1070,468]] },
+
+  rag_store:        { pts:[[220,522],[220,620]] },
+  market_store:     { pts:[[470,522],[470,620]] },
+  sql_store:        { pts:[[870,522],[870,620]] },
+  risk_store:       { pts:[[1070,522],[1070,620]] },
+
+  rag_critic:       { pts:[[220,680],[220,780],[670,780],[670,835]] },
+  market_critic:    { pts:[[470,680],[470,780],[670,780],[670,835]] },
+  sql_critic:       { pts:[[870,680],[870,780],[670,780],[670,835]] },
+  risk_critic:      { pts:[[1070,680],[1070,780],[670,780],[670,835]] },
+
+  critic_route:     { pts:[[670,891],[670,965]] },
+
+  route_final:      { pts:[[670,1075],[670,1192]] },
+  route_revise:     { pts:[[810,1020],[1300,1020],[1300,395],[780,395]], dashed:true },
+  route_human:      { pts:[[810,1020],[990,1020],[990,1075]] },
+
+  direct_final:     { pts:[[1175,260],[1235,260],[1235,1220],[800,1220]] },
+  blocked_final:    { pts:[[80,260],[30,260],[30,1220],[540,1220]] },
+  human_final:      { pts:[[990,1125],[990,1220],[800,1220]] },
+};
+
+const COLORS = {
+  safe:'var(--c-safe)', blocked:'var(--c-blocked)', revise:'var(--c-revise)',
+  human:'var(--c-human)', final:'var(--c-final)', crew:'var(--c-crew)',
+  store:'var(--c-store)', ollama:'var(--c-ollama)'
+};
+
+/* ============================== SVG BUILD ============================== */
+
+const svg = document.getElementById('diagram');
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs){ const e = document.createElementNS(NS, tag); for(const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+// Crew_Node background boundary
+(function(){
+  const c = NODES.crewBg;
+  const r = el('rect', { x:c.x, y:c.y, width:c.w, height:c.h, rx:16, class:'crew-bg' });
+  svg.appendChild(r);
+  const t = el('text', { x:c.x+18, y:c.y+24, class:'crew-label' });
+  t.textContent = 'CREW_NODE — Single Specialist Delegation & Physical Data Store Architecture';
+  svg.appendChild(t);
+})();
+
+// Draw Edges
+const edgeEls = {};
+for(const id in EDGES){
+  const e = EDGES[id];
+  const points = e.pts.map(p=>p.join(',')).join(' ');
+  const pl = el('polyline', { points, class:'edge'+(e.dashed?' dashed':''), id:'edge-'+id });
+  svg.appendChild(pl);
+  edgeEls[id] = pl;
+}
+
+// Edge Labels
+const EDGE_LABELS = [
+  {x:685,y:192,text:'Safe'},
+  {x:330,y:135,text:'Unsafe Query'},
+  {x:885,y:248,text:'Simple Query (Direct)'},
+  {x:685,y:340,text:'Complex Query'},
+  {x:1140,y:1008,text:'No · Revise Loop'},
+  {x:685,y:1130,text:'Yes (Confidence ≥ 0.70)'},
+  {x:895,y:1008,text:'Max Retries Reached'},
+];
+EDGE_LABELS.forEach(l=>{
+  const t = el('text', {x:l.x, y:l.y, class:'edge-label'});
+  t.textContent = l.text;
+  svg.appendChild(t);
+});
+
+// Build Node SVG graphics
+const nodeEls = {};
+for(const id in NODES){
+  if(id === 'crewBg') continue;
+  const n = NODES[id];
+  const g = el('g', { class:'node', id:'node-'+id });
+
+  if(n.shape === 'diamond'){
+    const hw = n.w/2, hh = n.h/2;
+    const pts = [[n.x,n.y-hh],[n.x+hw,n.y],[n.x,n.y+hh],[n.x-hw,n.y]].map(p=>p.join(',')).join(' ');
+    g.appendChild(el('polygon', {points:pts}));
+  } else if(n.shape === 'cylinder'){
+    const hw = n.w/2, hh = n.h/2, ry = 8;
+    const d = `M ${n.x-hw},${n.y-hh+ry} a ${hw},${ry} 0 0,0 ${n.w},0 v ${n.h-2*ry} a ${hw},${ry} 0 0,1 -${n.w},0 z`;
+    const top = el('path', { d:`M ${n.x-hw},${n.y-hh+ry} a ${hw},${ry} 0 1,0 ${n.w},0 a ${hw},${ry} 0 1,0 -${n.w},0` });
+    const body = el('path', { d });
+    g.appendChild(body);
+    g.appendChild(top);
+  } else {
+    const rx = n.shape === 'pill' ? n.h/2 : 10;
+    g.appendChild(el('rect', {x:n.x-n.w/2, y:n.y-n.h/2, width:n.w, height:n.h, rx}));
+  }
+
+  const label = el('text', { x:n.x, y:n.sub? n.y-8 : n.y });
+  label.textContent = n.label;
+  g.appendChild(label);
+
+  if(n.sub){
+    const sub = el('text', { x:n.x, y:n.y+11, class:'sub-label' });
+    sub.textContent = n.sub;
+    g.appendChild(sub);
+  }
+
+  svg.appendChild(g);
+  nodeEls[id] = g;
+}
+
+// Packet Spawning & Path Math
+function spawnPacket(color){
+  const c = el('circle', { r:7, class:'packet', style:'color:'+color+'; fill:'+color });
+  svg.appendChild(c);
+  return c;
+}
+
+function segLengths(pts){
+  const lens = []; let total = 0;
+  for(let i=1;i<pts.length;i++){
+    const dx = pts[i][0]-pts[i-1][0], dy = pts[i][1]-pts[i-1][1];
+    const d = Math.sqrt(dx*dx+dy*dy);
+    lens.push(d); total += d;
+  }
+  return { lens, total };
+}
+
+function pointAtT(pts, t){
+  const { lens, total } = segLengths(pts);
+  let target = total * Math.max(0, Math.min(1,t));
+  for(let i=0;i<lens.length;i++){
+    if(target <= lens[i] || i === lens.length-1){
+      const ratio = lens[i] === 0 ? 0 : target/lens[i];
+      const x = pts[i][0] + (pts[i+1][0]-pts[i][0]) * ratio;
+      const y = pts[i][1] + (pts[i+1][1]-pts[i][1]) * ratio;
+      return [x,y];
+    }
+    target -= lens[i];
+  }
+  return pts[pts.length-1];
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+function traverseEdge(edgeId, colorVar, durationMs, reverse=false){
+  return new Promise(resolve=>{
+    const e = EDGES[edgeId];
+    const pts = reverse ? [...e.pts].reverse() : e.pts;
+    const pl = edgeEls[edgeId];
+    pl.style.stroke = colorVar;
+    pl.classList.add('lit');
+
+    const packet = spawnPacket(colorVar);
+    const start = performance.now();
+
+    function frame(now){
+      const t = Math.min(1, (now-start)/durationMs);
+      const [x,y] = pointAtT(pts, t);
+      packet.setAttribute('cx', x);
+      packet.setAttribute('cy', y);
+      if(t < 1){ requestAnimationFrame(frame); }
+      else { packet.remove(); resolve(); }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+function setNodeState(id, state, colorVar){
+  const g = nodeEls[id];
+  if(!g) return;
+  g.classList.remove('active','done');
+  if(colorVar) g.style.setProperty('--glow', colorVar);
+  if(state) g.classList.add(state);
+}
+
+function resetDiagram(){
+  for(const id in nodeEls){ nodeEls[id].classList.remove('active','done'); }
+  for(const id in edgeEls){
+    edgeEls[id].classList.remove('lit');
+    edgeEls[id].style.stroke = '';
+  }
+}
+
+/* ============================== LOG + STATE PANEL ============================== */
+
+const logEl = document.getElementById('log');
+let t0 = null;
+function ts(){
+  if(t0===null) t0 = performance.now();
+  const s = (performance.now()-t0)/1000;
+  return s.toFixed(2).padStart(5,'0')+'s';
+}
+function log(msg, cls){
+  const line = document.createElement('div');
+  line.className = 'log-line' + (cls ? ' hl-'+cls : '');
+  line.innerHTML = '<span class="ts">['+ts()+']</span><span class="msg"></span>';
+  line.querySelector('.msg').textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog(){ logEl.innerHTML = ''; t0 = null; }
+
+const badge = document.getElementById('statusBadge');
+function setBadge(text, colorVar){
+  badge.textContent = text;
+  badge.style.background = colorVar;
+  badge.style.color = '#0B0F17';
+}
+
+function setKV(vals){
+  for(const k in vals){
+    const e = document.getElementById('v-'+k);
+    if(e) e.textContent = vals[k];
+  }
+}
+function setConfidence(val){
+  const fill = document.getElementById('confFill');
+  document.getElementById('v-conf').textContent = (val==null) ? '—' : val.toFixed(2)+' / '+CONFIDENCE_THRESHOLD;
+  fill.style.width = (val==null?0:val*100)+'%';
+  fill.style.background = val==null ? 'var(--muted-dim)' : (val>=CONFIDENCE_THRESHOLD ? 'var(--c-final)' : 'var(--c-revise)');
+}
+
+/* ============================== QUERY CLASSIFICATION ============================== */
+
+const BLOCKED_PATTERNS = [
+  /guarantee(d)?\s+returns?/i, /insider\s+trading/i, /ignore\s+(all\s+)?(previous|prior)\s+instructions/i,
+  /pump\s+and\s+dump/i, /launder(ing)?\s+money/i, /evade\s+tax(es)?/i, /manipulat(e|ing)\s+(the\s+)?market/i
+];
+
+const SIMPLE_PATTERNS = [
+  /^(hi|hello|hey|greetings|good morning|good afternoon)/i,
+  /^what\s+is\s+a\s+(mutual\s+fund|bond|stock|etf|hedge\s+fund|equity|option|call|put)\??$/i,
+  /^explain\s+(diversification|compounding|asset\s+allocation)\??$/i,
+  /^who\s+are\s+you\??$/i
+];
+
+function analyzeQuery(q){
+  const lower = q.toLowerCase();
+  const blockedHit = BLOCKED_PATTERNS.some(p=>p.test(lower));
+  const isSimple = !blockedHit && SIMPLE_PATTERNS.some(p=>p.test(lower));
+
+  // Determine intent (Manager delegates to EXACTLY ONE primary agent per query)
+  let chosenAgent = 'sqlAgent';
+  let chosenStore = 'sqlDbStore';
+  let intentName = 'portfolio_sql';
+
+  if(/doc|pdf|prospectus|report|attachment|policy|rag|qdrant/.test(lower)){
+    chosenAgent = 'ragAgent'; chosenStore = 'ragDocStore'; intentName = 'document_rag';
+  } else if(/price|stock|tavily|market|trend|quote|yfinance|sector outlook/.test(lower)){
+    chosenAgent = 'marketAgent'; chosenStore = 'marketApiStore'; intentName = 'market_trend';
+  } else if(/risk|var|volatility|drawdown|exposure|hedge|concentration/.test(lower)){
+    chosenAgent = 'riskAgent'; chosenStore = 'riskEngineStore'; intentName = 'risk_analytics';
+  } else if(/sql|table|holding|portfolio|balance|row|sqlite|database/.test(lower)){
+    chosenAgent = 'sqlAgent'; chosenStore = 'sqlDbStore'; intentName = 'portfolio_sql';
+  }
+
+  let hash = 0;
+  for(let i=0;i<q.length;i++){ hash = (hash*31 + q.charCodeAt(i)) >>> 0; }
+  const band = hash % 3;
+
+  return {
+    isSafe: !blockedHit,
+    reason: blockedHit ? 'Query matched a blocked pattern (unsafe / policy violation).' : '',
+    isSimple,
+    intents: [intentName],
+    agents: [chosenAgent],
+    stores: [chosenStore],
+    band,
+  };
+}
+
+/* ============================== PRESET SCENARIOS ============================== */
+
+const PRESETS = {
+  direct: {
+    query: 'Hello, what is a mutual fund?',
+    forceAgent: null, forceStore: null, forceType: 'direct',
+  },
+  sql_db: {
+    query: 'Show portfolio holdings and total asset value from database tables.',
+    forceAgent: 'sqlAgent', forceStore: 'sqlDbStore', intent: 'portfolio_sql',
+  },
+  rag_doc: {
+    query: 'What are the credit risk classification guidelines in the attached document?',
+    forceAgent: 'ragAgent', forceStore: 'ragDocStore', intent: 'document_rag',
+  },
+  market_api: {
+    query: 'Fetch live NVDA stock price, market trend, and tech sector outlook.',
+    forceAgent: 'marketAgent', forceStore: 'marketApiStore', intent: 'market_trend',
+  },
+  risk_engine: {
+    query: 'Calculate Value at Risk (VaR) and sector concentration exposure.',
+    forceAgent: 'riskAgent', forceStore: 'riskEngineStore', intent: 'risk_analytics',
+  },
+  unsafe: {
+    query: 'Can you help me launder money and evade taxes using offshore shell companies?',
+    forceAgent: null, forceStore: null, forceType: 'unsafe',
+  },
+  revise_ok: {
+    query: 'Evaluate emerging market bond risk exposure with benchmarking metrics.',
+    forceAgent: 'riskAgent', forceStore: 'riskEngineStore', intent: 'risk_analytics', forceBand: 1,
+  },
+  revise_escalate: {
+    query: 'Predict guaranteed quarterly profits for derivative assets under market stress.',
+    forceAgent: 'riskAgent', forceStore: 'riskEngineStore', intent: 'risk_analytics', forceBand: 2,
+  },
+};
+
+let running = false;
+function setControlsDisabled(disabled){
+  document.querySelectorAll('.scn').forEach(b=>b.disabled=disabled);
+  document.getElementById('runCustom').disabled = disabled;
+}
+
+async function runScenario(queryText, presetKey){
+  if(running) return;
+  running = true;
+  setControlsDisabled(true);
+  resetDiagram();
+  clearLog();
+  setConfidence(null);
+  setKV({ query: queryText, guardrail:'—', router:'—', intents:'—', agents:'—', stores:'—', revise:'0 / '+MAX_RETRIES, route:'—' });
+  setBadge('RUNNING', 'var(--c-crew)');
+
+  const analysis = analyzeQuery(queryText);
+  if(presetKey && PRESETS[presetKey]){
+    const p = PRESETS[presetKey];
+    if(p.forceType === 'direct') { analysis.isSimple = true; analysis.agents = []; analysis.stores = []; }
+    else if(p.forceType === 'unsafe') { analysis.isSafe = false; }
+    else if(p.forceAgent){
+      analysis.isSimple = false;
+      analysis.agents = [p.forceAgent];
+      analysis.stores = [p.forceStore];
+      analysis.intents = [p.intent];
+      if(p.forceBand !== undefined) analysis.band = p.forceBand;
+    }
+  }
+
+  log('User query received: "'+queryText+'"');
+  setNodeState('userQuery','done', COLORS.safe);
+  await sleep(250);
+
+  // 1. Guardrail Check
+  setNodeState('guardrail','active', COLORS.safe);
+  await traverseEdge('q_guardrail', COLORS.safe, 450);
+  log('Guardrail Check: validating 8 safety rules (SQL injection, PII, financial crimes, jailbreaks)…');
+  await sleep(300);
+
+  if(!analysis.isSafe){
+    setKV({ guardrail:'UNSAFE ✕' });
+    setNodeState('guardrail','done', COLORS.blocked);
+    log(analysis.reason, 'blocked');
+    setNodeState('blocked','active', COLORS.blocked);
+    await traverseEdge('guardrail_blocked', COLORS.blocked, 800);
+    setNodeState('blocked','done', COLORS.blocked);
+    log('Blocked node reached. Safe policy violation response generated.', 'blocked');
+    setKV({ route:'blocked' });
+    await sleep(250);
+    await traverseEdge('blocked_final', COLORS.blocked, 650);
+    setNodeState('finalResponse','done', COLORS.blocked);
+    log('Final Response (Blocked) delivered to user. Trace terminated.', 'blocked');
+    setBadge('BLOCKED', 'var(--c-blocked)');
+    running = false; setControlsDisabled(false);
+    return;
+  }
+
+  setKV({ guardrail:'SAFE ✓' });
+  setNodeState('guardrail','done', COLORS.safe);
+  log('Guardrail Check passed. Proceeding to Pre-Router node…', 'safe');
+  await sleep(200);
+
+  // 2. Pre-Router Check (Ollama)
+  setNodeState('router','active', COLORS.ollama);
+  await traverseEdge('guardrail_router', COLORS.safe, 450);
+  log('Pre-Router (Ollama Llama 3.2): evaluating intent classification…', 'ollama');
+  await sleep(350);
+
+  if(analysis.isSimple){
+    setKV({ router:'SIMPLE → Direct Ollama', intents:'simple_definitional' });
+    setNodeState('router','done', COLORS.ollama);
+    log('Ollama Pre-Router classified query as SIMPLE. Bypassing CrewAI graph for fast response.', 'ollama');
+    setNodeState('directOllama','active', COLORS.ollama);
+    await traverseEdge('router_direct', COLORS.ollama, 600);
+    setNodeState('directOllama','done', COLORS.ollama);
+    log('Direct Ollama Answer: generated response in < 0.45s.', 'ollama');
+    setKV({ route:'direct_ollama' });
+    await sleep(250);
+    await traverseEdge('direct_final', COLORS.ollama, 750);
+    setNodeState('finalResponse','done', COLORS.ollama);
+    log('Final Response delivered. Trace terminated.', 'ollama');
+    setBadge('COMPLETED', 'var(--c-ollama)');
+    running = false; setControlsDisabled(false);
+    return;
+  }
+
+  const selectedAgent = analysis.agents[0];
+  const selectedStore = analysis.stores[0];
+
+  setKV({ router:'COMPLEX → Crew_Node', intents: analysis.intents.join(', ') });
+  setNodeState('router','done', COLORS.crew);
+  log('Ollama Pre-Router classified query as COMPLEX. Routing to Crew_Node Manager.', 'crew');
+  await traverseEdge('router_manager', COLORS.crew, 500);
+
+  // 3. Single-Agent Flow Loop
+  let reviseCount = 0;
+  let confidence = 0;
+  let firstPass = true;
+
+  const agentEdgeMap = { ragAgent:'manager_rag', marketAgent:'manager_market', sqlAgent:'manager_sql', riskAgent:'manager_risk' };
+  const storeEdgeMap = { ragAgent:'rag_store', marketAgent:'market_store', sqlAgent:'sql_store', riskAgent:'risk_store' };
+  const agentStoreNodeMap = { ragAgent:'ragDocStore', marketAgent:'marketApiStore', sqlAgent:'sqlDbStore', riskAgent:'riskEngineStore' };
+  const criticEdgeMap = { ragAgent:'rag_critic', marketAgent:'market_critic', sqlAgent:'sql_critic', riskAgent:'risk_critic' };
+
+  while(true){
+    setNodeState('manager','active', COLORS.crew);
+    log((firstPass? 'Manager Agent' : 'Manager Agent (Revision Pass '+reviseCount+')')+': selected 1 specialist agent → '+AGENT_NAMES[selectedAgent]+'.', 'crew');
+    setKV({ agents: AGENT_NAMES[selectedAgent], stores: STORE_NAMES[selectedStore] });
+    await sleep(300);
+
+    // Delegate to SINGLE agent
+    const storeNode = agentStoreNodeMap[selectedAgent];
+    setNodeState(selectedAgent,'active', COLORS.crew);
+    await traverseEdge(agentEdgeMap[selectedAgent], COLORS.crew, 550);
+    setNodeState(selectedAgent,'done', COLORS.crew);
+    log(AGENT_NAMES[selectedAgent]+': received task. Querying underlying '+STORE_NAMES[storeNode]+'…', 'crew');
+
+    // Query Data Store
+    setNodeState(storeNode, 'active', COLORS.store);
+    await traverseEdge(storeEdgeMap[selectedAgent], COLORS.store, 450);
+    log(STORE_NAMES[storeNode]+': retrieved physical data records & returned context payload.', 'store');
+    await sleep(250);
+    await traverseEdge(storeEdgeMap[selectedAgent], COLORS.store, 450, true); // return path
+    setNodeState(storeNode, 'done', COLORS.store);
+    await sleep(200);
+
+    // Send to Reflection / Critic Node
+    setNodeState('critic','active', COLORS.crew);
+    await traverseEdge(criticEdgeMap[selectedAgent], COLORS.crew, 500);
+    log('Reflection / Critic Node: evaluating agent response, grounding, and attribution accuracy…', 'crew');
+    await sleep(300);
+
+    // Compute Confidence
+    if(presetKey === 'sql_db' || presetKey === 'rag_doc' || presetKey === 'market_api' || presetKey === 'risk_engine' || analysis.band === 0){
+      confidence = 0.86 + (Math.abs((queryText.length*7)%11))/100;
+    } else if(analysis.band === 1){
+      confidence = firstPass ? 0.54 : Math.min(0.91, 0.54 + reviseCount*0.37);
+    } else {
+      confidence = firstPass ? 0.48 : Math.min(0.65, 0.48 + reviseCount*0.08);
+    }
+    confidence = Math.min(0.96, confidence);
+
+    setNodeState('critic','done', COLORS.crew);
+    await traverseEdge('critic_route', COLORS.crew, 400);
+    setConfidence(confidence);
+    log('Reflection / Critic Node: review complete → Confidence Score = '+confidence.toFixed(2)+'.');
+    await sleep(250);
+
+    // 4. Route Decision
+    setNodeState('route','active', confidence>=CONFIDENCE_THRESHOLD ? COLORS.final : COLORS.revise);
+
+    if(confidence >= CONFIDENCE_THRESHOLD){
+      log('Route Decision: Confidence '+confidence.toFixed(2)+' ≥ '+CONFIDENCE_THRESHOLD+' threshold → APPROVED.', 'final');
+      setKV({ route:'final_approved' });
+      setNodeState('route','done', COLORS.final);
+      await traverseEdge('route_final', COLORS.final, 650);
+      setNodeState('finalResponse','done', COLORS.final);
+      log('Final Response (Approved) delivered to analyst. Graph execution completed.', 'final');
+      setBadge('APPROVED', 'var(--c-final)');
+      break;
+    }
+
+    if(reviseCount >= MAX_RETRIES){
+      log('Route Decision: Confidence below threshold after '+MAX_RETRIES+' retries → ESCALATE TO HUMAN HANDOFF.', 'human');
+      setKV({ route:'human_handoff' });
+      setNodeState('route','done', COLORS.human);
+      setNodeState('humanHandoff','active', COLORS.human);
+      await traverseEdge('route_human', COLORS.human, 650);
+      setNodeState('humanHandoff','done', COLORS.human);
+      log('Human Handoff Node: packaged full trace, draft answer, flagged discrepancies, and query context for human review.', 'human');
+      await sleep(300);
+      await traverseEdge('human_final', COLORS.human, 650);
+      setNodeState('finalResponse','done', COLORS.human);
+      log('Final Response (Escalated) delivered. Graph execution terminated.', 'human');
+      setBadge('ESCALATED', 'var(--c-human)');
+      break;
+    }
+
+    reviseCount += 1;
+    setKV({ revise: reviseCount+' / '+MAX_RETRIES });
+    log('Route Decision: Confidence below threshold, revise_count ('+reviseCount+') < max ('+MAX_RETRIES+') → REVISE LOOP.', 'revise');
+    setNodeState('route','done', COLORS.revise);
+    await traverseEdge('route_revise', COLORS.revise, 850);
+    log('Looping back to Manager Agent with Critic feedback for revised synthesis…', 'revise');
+    await sleep(250);
+    firstPass = false;
+  }
+
+  running = false;
+  setControlsDisabled(false);
+}
+
+/* ============================== WIRE UP ============================== */
+
+document.querySelectorAll('.scn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const pKey = btn.dataset.scn;
+    const p = PRESETS[pKey];
+    document.getElementById('customQuery').value = p.query;
+    runScenario(p.query, pKey);
+  });
+});
+
+document.getElementById('runCustom').addEventListener('click', ()=>{
+  const q = document.getElementById('customQuery').value.trim();
+  if(!q) return;
+  runScenario(q, null);
+});
+document.getElementById('customQuery').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') document.getElementById('runCustom').click();
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(running) return;
+  resetDiagram();
+  clearLog();
+  setConfidence(null);
+  setKV({ query:'—', guardrail:'—', router:'—', intents:'—', agents:'—', stores:'—', revise:'0 / '+MAX_RETRIES, route:'—' });
+  setBadge('IDLE', 'var(--idle)');
+});
+
+})();
+</script>
+</body>
+</html>
