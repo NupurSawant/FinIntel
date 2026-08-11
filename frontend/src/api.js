@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://finance-risk-and-investment-intelligent.onrender.com";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8000" : "https://financeintel.onrender.com");
 
 function getAuthHeaders(token, username, extra = {}) {
   const headers = { ...extra };
