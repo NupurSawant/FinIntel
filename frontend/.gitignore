@@ -11,6 +11,8 @@
 .env.*
 !.env.example
 .env.local
+.streamlit/secrets.toml
+!pyproject.toml
 
 # ---------------------------------------------------------------------
 # 2. Node Dependencies
