@@ -289,18 +289,47 @@ class RAGService:
         return len(points)
 
     def _delete_points_for_source(self, filename: str):
-        self._client.delete(
-            collection_name=QDRANT_COLLECTION,
-            points_selector=qmodels.FilterSelector(
-                filter=qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(
-                            key="source", match=qmodels.MatchValue(value=filename)
-                        )
-                    ]
-                )
-            ),
-        )
+        try:
+            self._client.delete(
+                collection_name=QDRANT_COLLECTION,
+                points_selector=qmodels.FilterSelector(
+                    filter=qmodels.Filter(
+                        must=[
+                            qmodels.FieldCondition(
+                                key="source", match=qmodels.MatchValue(value=filename)
+                            )
+                        ]
+                    )
+                ),
+            )
+        except Exception as e:
+            logger.warning(
+                "Filter delete failed for %s: %s. Falling back to point scroll delete.",
+                filename,
+                e,
+            )
+            try:
+                point_ids = []
+                next_offset = None
+                while True:
+                    records, next_offset = self._client.scroll(
+                        collection_name=QDRANT_COLLECTION,
+                        with_payload=["source"],
+                        limit=200,
+                        offset=next_offset,
+                    )
+                    for record in records:
+                        if record.payload.get("source") == filename:
+                            point_ids.append(record.id)
+                    if next_offset is None:
+                        break
+                if point_ids:
+                    self._client.delete(
+                        collection_name=QDRANT_COLLECTION,
+                        points_selector=qmodels.PointIdsList(points=point_ids),
+                    )
+            except Exception as ex:
+                logger.error("Scroll delete failed for %s: %s", filename, ex)
 
     def sync_documents(self):
         """Ensures all supported files in DOCUMENTS_DIR are indexed into Qdrant."""
@@ -403,11 +432,22 @@ class RAGService:
     def remove_file(self, filename: str) -> bool:
         safe_name = os.path.basename(filename)  # prevent path traversal
         path = os.path.join(DOCUMENTS_DIR, safe_name)
-        if not os.path.isfile(path):
-            return False
-        os.remove(path)
-        self._delete_points_for_source(safe_name)
-        return True
+        file_existed = False
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+                file_existed = True
+            except Exception as e:
+                logger.warning("Failed to remove disk file %s: %s", path, e)
+
+        qdrant_deleted = False
+        try:
+            self._delete_points_for_source(safe_name)
+            qdrant_deleted = True
+        except Exception as e:
+            logger.warning("Failed to delete Qdrant points for %s: %s", safe_name, e)
+
+        return file_existed or qdrant_deleted
 
     def list_documents(self) -> list[str]:
         self.sync_documents()

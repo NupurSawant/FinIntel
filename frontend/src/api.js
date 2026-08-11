@@ -1,4 +1,14 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://localhost:8000" : "https://financeintel.onrender.com");
+function getApiBaseUrl() {
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
+      return "http://localhost:8000";
+    }
+  }
+  return import.meta.env.VITE_API_BASE_URL || "https://financeintel.onrender.com";
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 function getAuthHeaders(token, username, extra = {}) {
   const headers = { ...extra };
