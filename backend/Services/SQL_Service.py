@@ -81,17 +81,21 @@ def ingest_sql_file(file_path: str) -> dict:
 
 
 def list_tables() -> list[str]:
-    conn = _admin_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'public'
-                ORDER BY table_name;
-                """)
-            return [row[0] for row in cur.fetchall()]
-    finally:
-        conn.close()
+        conn = _admin_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT table_name FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name;
+                    """)
+                return [row[0] for row in cur.fetchall()]
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("PostgreSQL connection unavailable: %s", e)
+        return []
 
 
 def get_schema_description() -> str:
@@ -101,18 +105,22 @@ def get_schema_description() -> str:
     context at query time, the same way 'Available Documents' is injected
     for the RAG Agent - the tool itself stays schema-agnostic.
     """
-    conn = _admin_connection()
     try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT table_name, column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                ORDER BY table_name, ordinal_position;
-                """)
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+        conn = _admin_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT table_name, column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name, ordinal_position;
+                    """)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("PostgreSQL connection unavailable: %s", e)
+        return "No tables currently exist in the database. Database is currently unconfigured or offline."
 
     if not rows:
         return "No tables currently exist in the database. No SQL file has been uploaded yet."
@@ -142,15 +150,16 @@ def run_readonly_query(query: str) -> str:
     if FORBIDDEN_KEYWORDS.search(stripped):
         return "Rejected: query contains a forbidden write/DDL keyword."
 
-    conn = _readonly_connection()
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(stripped)
-            rows = cur.fetchall()
-    except psycopg2.Error as e:
-        return f"SQL execution error: {e}"
-    finally:
-        conn.close()
+        conn = _readonly_connection()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(stripped)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        return f"SQL execution error or database unavailable: {e}"
 
     if not rows:
         return "Query executed successfully but returned no rows."

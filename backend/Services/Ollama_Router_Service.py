@@ -119,7 +119,7 @@ Message: {query}"""
 def _get_structured_llm():
     from langchain_ollama import ChatOllama
 
-    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0)
+    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0, timeout=2.0)
     return llm.with_structured_output(RouterVerdict)
 
 
