@@ -94,16 +94,16 @@ def build_finance_crew(query: str, revision_instructions: str = "") -> Crew:
     if is_database_query:
         task_description = (
             f"Analyst query:\n{query}\n\n"
-            "This is a direct SQL/database query. Use the provided schema and SQL Agent to answer it with concise database results only.\n"
-            "Do not generate a full analytical report, headings, key risks, recommendations, or sources unless the user explicitly asks for them.\n"
-            "If the query requests specific rows or aggregates, return only the requested data in plain text, with minimal commentary.\n\n"
-            f"Available Database Schema:\n{database_schema}\n\n"
-            "Your final answer should be short, easy to read, and focused on the direct database output.\n"
-            "Prefer rows, values, or simple summaries over paragraph-style analysis."
+            "This is a direct SQL/database query. Use the provided schema and SQL Agent to query the database and present the results in a clean, professional, and well-structured format.\n"
+            "Formatting guidelines:\n"
+            "- Present tabular query results using clean Markdown tables with column headers.\n"
+            "- For aggregate or single-value metrics, present key numbers clearly in bold or bullet points.\n"
+            "- Provide a brief 1-2 sentence explanation of what the retrieved database results represent.\n"
+            "- Do not force heavy report templates (like 'Key Risks' or 'Recommendation') unless explicitly requested by the user.\n\n"
+            f"Available Database Schema:\n{database_schema}\n"
         )
         task_expected_output = (
-            "Return the direct database result in plain text with minimal commentary. "
-            "Do not use report-style headings."
+            "Return a clean, well-structured response with formatted Markdown tables or key metrics alongside a concise explanation of the database results."
         )
     else:
         task_description = (
@@ -139,35 +139,22 @@ def build_finance_crew(query: str, revision_instructions: str = "") -> Crew:
             "If no market data is available, answer using general financial knowledge and clearly mention that no live market data was retrieved.\n\n"
             f"Uploaded Documents:\n{documents_note}\n\n"
             f"Available Database Schema:\n{database_schema}\n\n"
-            "Your final answer MUST be easy for a financial analyst to read.\n\n"
             "Live Web Search:\n"
             "Market Agent and Risk Agent can search the live web for current stock prices, "
             "recent market news, or general financial information not in our internal data. "
             "Use this when the query asks about 'current', 'today's', 'latest', or 'recent' "
             "information not covered by our portfolio database or uploaded documents.\n\n"
-            "Use the following format if require otherwise if Answer is short you can give in that way:\n\n"
-            "Summary:\n"
-            "Provide a short executive summary in 2-3 sentences.\n\n"
-            "Key Risks:\n"
-            "- Bullet point 1\n"
-            "- Bullet point 2\n"
-            "- Bullet point 3\n\n"
-            "Recommendation:\n"
-            "Provide clear actionable recommendations.\n\n"
-            "Sources:\n"
-            "- Mention the policy, SQL table, PDF, or analysis used.\n\n"
-            "Do NOT write one long paragraph.\n"
-            "Use short sentences.\n"
-            "Use bullet points.\n"
-            "Keep the response well organized."
+            "DYNAMIC RESPONSE STYLING & STRUCTURE:\n"
+            "- Act as a natural, intelligent financial AI chat assistant.\n"
+            "- Dynamically tailor the output structure to what the user's query specifically requests.\n"
+            "- Do NOT force rigid static sections like 'Summary', 'Key Risks', 'Recommendation', or 'Sources' unless the user specifically asked for a formal report or risk analysis.\n"
+            "- For simple or direct questions, answer directly and concisely in natural conversational prose.\n"
+            "- For analytical, multi-faceted, or comparison requests, structure your response logically using relevant custom headings, bullet points, or markdown tables.\n"
+            "- Naturally cite source documents or database tables when used.\n"
+            "- Maintain a professional, clean, and highly readable chat response style at all times."
         )
         task_expected_output = (
-            "Return a well-formatted report using the following sections:\n"
-            "Summary\n"
-            "Key Risks\n"
-            "Recommendation\n"
-            "Sources\n"
-            "Do not return a single paragraph."
+            "A clear, natural, and dynamically structured response tailored specifically to the user's prompt, using headings, tables, or bullet points only as appropriate to the request context."
         )
 
     if revision_instructions:

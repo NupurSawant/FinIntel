@@ -16,6 +16,10 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.streamlit/secrets.toml
+frontend/.streamlit/secrets.toml
+!pyproject.toml
+!**/pyproject.toml
 
 # ---------------------------------------------------------------------
 # 2. Local Databases & Storage Engines (DO NOT COMMIT)
@@ -28,6 +32,9 @@ data/db/*.db
 backend/data/db/*.db
 qdrant_storage/
 backend/qdrant_storage/
+# Qdrant Vector DB Files
+data/qdrant_db/
+backend/data/qdrant_db/
 
 # ---------------------------------------------------------------------
 # 3. Uploaded User Files & Financial Documents (DO NOT COMMIT)
@@ -41,6 +48,8 @@ backend/data/documents/*
 !backend/data/documents/.gitkeep
 backend/data/sql_uploads/*
 !backend/data/sql_uploads/.gitkeep
+data/escalations/
+backend/data/escalations/
 
 # ---------------------------------------------------------------------
 # 4. Python Environment & Dependencies

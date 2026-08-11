@@ -12,6 +12,7 @@
 .env.*
 !.env.example
 .env.local
+!pyproject.toml
 
 # ---------------------------------------------------------------------
 # 2. Local Databases & Vector Storage
@@ -21,6 +22,9 @@
 *.sqlite3
 data/db/*.db
 qdrant_storage/
+# Qdrant Vector DB Files
+data/qdrant_db/
+data/escalations/
 
 # ---------------------------------------------------------------------
 # 3. Uploaded Financial Documents & SQL Scripts

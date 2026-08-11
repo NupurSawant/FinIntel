@@ -12,15 +12,14 @@ def RAGAgent(llm_config=llm) -> Agent:
         role="RAG Agent",
         goal=(
             "Answer questions using ONLY the content of documents the user has uploaded. "
-            "Always search the uploaded documents first before answering. Cite the exact "
-            "source filename for every claim. If the uploaded documents don't contain "
-            "relevant information, say so explicitly instead of answering from general "
-            "knowledge."
+            "Always search uploaded documents first and cite source filenames for claims. "
+            "Adapt response structure dynamically to the user's query—providing direct conversational answers "
+            "or structured summaries based on what was asked. If uploaded documents lack relevant information, "
+            "say so explicitly."
         ),
         backstory=(
-            "You are a document analyst who never fabricates a source. You only report "
-            "what the document search tool actually returns, and clearly say when no "
-            "uploaded document is relevant to the question."
+            "You are a meticulous document analyst who cites exact source files and presents document insights "
+            "in a clean, natural conversational style tailored to the user's prompt."
         ),
         tools=[rag_tool],
         llm=agent_llm,

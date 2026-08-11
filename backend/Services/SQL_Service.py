@@ -156,10 +156,15 @@ def run_readonly_query(query: str) -> str:
         return "Query executed successfully but returned no rows."
 
     columns = list(rows[0].keys())
-    header = " | ".join(columns)
-    lines = [header, "-" * len(header)]
+    header = "| " + " | ".join(columns) + " |"
+    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
+    lines = [header, separator]
     for row in rows[:50]:
-        lines.append(" | ".join(str(row[c]) for c in columns))
+        lines.append(
+            "| "
+            + " | ".join(str(row[c]) if row[c] is not None else "" for c in columns)
+            + " |"
+        )
     if len(rows) > 50:
-        lines.append(f"... ({len(rows) - 50} more rows truncated)")
+        lines.append(f"\n*(Note: {len(rows) - 50} additional rows truncated)*")
     return "\n".join(lines)
