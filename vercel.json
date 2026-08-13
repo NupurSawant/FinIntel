@@ -1,17 +1,47 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "buildCommand": "npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/health", "destination": "/api/index.py" },
-    { "source": "/auth/(.*)", "destination": "/api/index.py" },
-    { "source": "/slo/(.*)", "destination": "/api/index.py" },
-    { "source": "/query/(.*)", "destination": "/api/index.py" },
-    { "source": "/query", "destination": "/api/index.py" },
-    { "source": "/rag/(.*)", "destination": "/api/index.py" },
-    { "source": "/sql/(.*)", "destination": "/api/index.py" },
-    { "source": "/conversations/(.*)", "destination": "/api/index.py" },
-    { "source": "/conversations", "destination": "/api/index.py" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/health",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/auth/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/slo/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/query/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/query",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/rag/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/sql/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/conversations/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/conversations",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
