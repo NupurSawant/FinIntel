@@ -1,11 +1,16 @@
 function getApiBaseUrl() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
     if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
       return "http://localhost:8000";
     }
+    // Deployed state fallback: relative URL routes via host rewrites (e.g., vercel.json)
+    return "";
   }
-  return import.meta.env.VITE_API_BASE_URL || "https://financeintel.onrender.com";
+  return "";
 }
 
 const API_BASE_URL = getApiBaseUrl();

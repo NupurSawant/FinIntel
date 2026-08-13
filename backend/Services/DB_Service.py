@@ -1,6 +1,7 @@
 """
 Database Service - Manages PostgreSQL database connections dynamically
 based on whether the application is running in Deployed state or Offline/Local state.
+Includes automatic fallback to Online Neon DB if local PostgreSQL is unreachable.
 """
 
 import logging
@@ -9,7 +10,7 @@ import psycopg2
 
 logger = logging.getLogger("finance_workflow")
 
-# Default Neon DB Online DSN (Used in Deployed State)
+# Default Neon DB Online DSN (Used in Deployed State or as Fallback)
 DEFAULT_NEON_DSN = (
     "postgresql://neondb_owner:npg_t8IbqdEcPV5Q@"
     "ep-misty-band-aygcnsg8.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
@@ -19,13 +20,23 @@ DEFAULT_NEON_DSN = (
 def is_deployed() -> bool:
     """
     Determines if the application is currently running in a Deployed state.
-    Checks environment variables such as IS_DEPLOYED, VERCEL, ENVIRONMENT, NODE_ENV.
+    Checks environment variables such as IS_DEPLOYED, VERCEL, RENDER, RAILWAY, etc.
     """
     is_dep = os.getenv("IS_DEPLOYED", "").strip().lower()
     if is_dep in ("true", "1", "yes", "deployed", "production"):
         return True
+    if is_dep in ("false", "0", "no", "local", "offline"):
+        return False
 
-    if os.getenv("VERCEL") == "1":
+    # Check common cloud platform environment variables
+    if (
+        os.getenv("VERCEL") == "1"
+        or os.getenv("RENDER") == "true"
+        or os.getenv("RENDER_SERVICE_ID")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("HEROKU_APP_ID")
+        or os.getenv("PORT")
+    ):
         return True
 
     env_name = os.getenv("ENVIRONMENT") or os.getenv("NODE_ENV") or os.getenv("APP_ENV") or ""
@@ -78,16 +89,38 @@ def _init_schema_and_tables(conn):
         conn.rollback()
 
 
+def _connect_neon_admin():
+    dsn = get_neon_dsn()
+    logger.info("Connecting to Online Neon DB (Admin Mode)...")
+    conn = psycopg2.connect(dsn)
+    _init_schema_and_tables(conn)
+    return conn
+
+
+def _connect_neon_readonly():
+    dsn = get_neon_dsn()
+    logger.info("Connecting to Online Neon DB (Read-Only Mode)...")
+    return psycopg2.connect(
+        dsn,
+        options="-c default_transaction_read_only=on",
+    )
+
+
 def get_admin_connection():
     """
     Returns an Admin PostgreSQL connection.
     Connects to online Neon DB if deployed, or local PostgreSQL if offline.
+    Automatically falls back to Neon DB if local PostgreSQL is unavailable.
     """
     if is_deployed():
-        dsn = get_neon_dsn()
-        logger.info("Connecting to Online Neon DB (Admin Mode)...")
-        conn = psycopg2.connect(dsn)
-    else:
+        try:
+            return _connect_neon_admin()
+        except Exception as e:
+            logger.error("Failed to connect to Neon DB admin: %s", e)
+            raise
+
+    # Offline / Local mode attempt
+    try:
         host = os.getenv("PG_HOST", "localhost")
         port = os.getenv("PG_PORT", "9000")
         dbname = os.getenv("PG_DATABASE", "finance_db")
@@ -99,35 +132,50 @@ def get_admin_connection():
             dbname=dbname,
             user=user,
             password=password,
+            connect_timeout=3,
         )
-
-    _init_schema_and_tables(conn)
-    return conn
+        _init_schema_and_tables(conn)
+        return conn
+    except Exception as local_err:
+        logger.warning(
+            "Local PostgreSQL connection unavailable (%s). Falling back to Online Neon DB...",
+            local_err,
+        )
+        return _connect_neon_admin()
 
 
 def get_readonly_connection():
     """
     Returns a Read-Only PostgreSQL connection.
     Enforces default_transaction_read_only=on on the connection session.
+    Automatically falls back to Neon DB if local PostgreSQL is unavailable.
     """
     if is_deployed():
-        dsn = get_neon_dsn()
-        logger.info("Connecting to Online Neon DB (Read-Only Mode)...")
-        return psycopg2.connect(
-            dsn,
-            options="-c default_transaction_read_only=on",
-        )
+        try:
+            return _connect_neon_readonly()
+        except Exception as e:
+            logger.error("Failed to connect to Neon DB read-only: %s", e)
+            raise
 
-    host = os.getenv("PG_HOST", "localhost")
-    port = os.getenv("PG_PORT", "9000")
-    dbname = os.getenv("PG_DATABASE", "finance_db")
-    user = os.getenv("PG_READONLY_USER", "finance_readonly")
-    password = os.getenv("PG_READONLY_PASSWORD", "")
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password,
-        options="-c default_transaction_read_only=on",
-    )
+    # Offline / Local mode attempt
+    try:
+        host = os.getenv("PG_HOST", "localhost")
+        port = os.getenv("PG_PORT", "9000")
+        dbname = os.getenv("PG_DATABASE", "finance_db")
+        user = os.getenv("PG_READONLY_USER", "finance_readonly")
+        password = os.getenv("PG_READONLY_PASSWORD", "")
+        return psycopg2.connect(
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=user,
+            password=password,
+            options="-c default_transaction_read_only=on",
+            connect_timeout=3,
+        )
+    except Exception as local_err:
+        logger.warning(
+            "Local PostgreSQL read-only connection unavailable (%s). Falling back to Online Neon DB...",
+            local_err,
+        )
+        return _connect_neon_readonly()
