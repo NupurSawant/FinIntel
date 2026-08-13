@@ -23,15 +23,7 @@ import psycopg2.extras
 
 logger = logging.getLogger("finance_workflow")
 
-PG_HOST = os.getenv("PG_HOST", "localhost")
-PG_PORT = os.getenv("PG_PORT", "9000")
-PG_DATABASE = os.getenv("PG_DATABASE", "finance_db")
-
-PG_ADMIN_USER = os.getenv("PG_ADMIN_USER", "postgres")
-PG_ADMIN_PASSWORD = os.getenv("PG_ADMIN_PASSWORD", "")
-
-PG_READONLY_USER = os.getenv("PG_READONLY_USER", "finance_readonly")
-PG_READONLY_PASSWORD = os.getenv("PG_READONLY_PASSWORD", "")
+from Services.DB_Service import get_admin_connection, get_readonly_connection
 
 FORBIDDEN_KEYWORDS = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|TRUNCATE|GRANT|REVOKE)\b",
@@ -40,24 +32,11 @@ FORBIDDEN_KEYWORDS = re.compile(
 
 
 def _admin_connection():
-    return psycopg2.connect(
-        host=PG_HOST,
-        port=PG_PORT,
-        dbname=PG_DATABASE,
-        user=PG_ADMIN_USER,
-        password=PG_ADMIN_PASSWORD,
-    )
+    return get_admin_connection()
 
 
 def _readonly_connection():
-    return psycopg2.connect(
-        host=PG_HOST,
-        port=PG_PORT,
-        dbname=PG_DATABASE,
-        user=PG_READONLY_USER,
-        password=PG_READONLY_PASSWORD,
-        options="-c default_transaction_read_only=on",
-    )
+    return get_readonly_connection()
 
 
 def ingest_sql_file(file_path: str) -> dict:

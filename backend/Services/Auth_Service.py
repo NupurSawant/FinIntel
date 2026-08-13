@@ -32,16 +32,13 @@ _jwks_cache: dict[str, Any] = {"keys": [], "fetched_at": 0}
 JWKS_CACHE_SECONDS = 60 * 60
 
 
+from Services.DB_Service import get_admin_connection
+
+
 def _sync_postgres_user(name: str, email: str, password_hash: str):
-    """Syncs user details into PostgreSQL finance_db database so it is visible in pgAdmin under table 'users'."""
+    """Syncs user details into PostgreSQL database (Neon DB if deployed, local Postgres if offline)."""
     try:
-        conn = psycopg2.connect(
-            host=os.getenv("PG_HOST", "localhost"),
-            port=os.getenv("PG_PORT", "9000"),
-            dbname=os.getenv("PG_DATABASE", "finance_db"),
-            user=os.getenv("PG_ADMIN_USER", "postgres"),
-            password=os.getenv("PG_ADMIN_PASSWORD", "postgres"),
-        )
+        conn = get_admin_connection()
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (

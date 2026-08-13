@@ -11,21 +11,11 @@ import os
 import psycopg2
 import psycopg2.extras
 
-PG_HOST = os.getenv("PG_HOST", "localhost")
-PG_PORT = os.getenv("PG_PORT", "5432")
-PG_DATABASE = os.getenv("PG_DATABASE", "finance_db")
-PG_ADMIN_USER = os.getenv("PG_ADMIN_USER", "postgres")
-PG_ADMIN_PASSWORD = os.getenv("PG_ADMIN_PASSWORD", "")
+from Services.DB_Service import get_admin_connection
 
 
 def _admin_connection():
-    conn = psycopg2.connect(
-        host=PG_HOST,
-        port=PG_PORT,
-        dbname=PG_DATABASE,
-        user=PG_ADMIN_USER,
-        password=PG_ADMIN_PASSWORD,
-    )
+    conn = get_admin_connection()
     conn.set_client_encoding("UTF8")
     return conn
 

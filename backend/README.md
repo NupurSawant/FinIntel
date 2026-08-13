@@ -17,3 +17,6 @@ QDrant API Key = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3Viam
 Cluster Endpoint = https://b9ad2bff-698a-4bf4-988f-30a63aaf6f43.eu-central-1-0.aws.cloud.qdrant.io
 
 Cluster ID - b9ad2bff-698a-4bf4-988f-30a63aaf6f43
+
+
+ollama run llama3.2

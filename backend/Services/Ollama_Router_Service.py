@@ -108,6 +108,8 @@ class RouterVerdict(BaseModel):
     )
 
 
+USE_OLLAMA = os.getenv("USE_OLLAMA", "true").lower() in ("true", "1", "yes")
+
 _ROUTER_PROMPT = """Classify this message as SIMPLE or COMPLEX, and if SIMPLE, answer it.
 
 SIMPLE examples: "hello", "hi", "thanks", "what is a mutual fund?", "explain diversification"
@@ -117,10 +119,32 @@ Message: {query}"""
 
 
 def _get_structured_llm():
-    from langchain_ollama import ChatOllama
+    """
+    Returns structured LLM for pre-routing.
+    Uses ChatOllama on localhost if enabled and available.
+    Falls back to Azure OpenAI (llm.get_langchain_llm()) in deployed/cloud environments.
+    """
+    if USE_OLLAMA:
+        try:
+            from langchain_ollama import ChatOllama
 
-    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0, timeout=2.0)
-    return llm.with_structured_output(RouterVerdict)
+            local_llm = ChatOllama(
+                model=OLLAMA_MODEL,
+                base_url=OLLAMA_BASE_URL,
+                temperature=0,
+                timeout=2.0,
+            )
+            return local_llm.with_structured_output(RouterVerdict), "ollama"
+        except Exception as e:
+            logger.info(
+                "Local Ollama not available (%s), falling back to Azure OpenAI for pre-router.",
+                e,
+            )
+
+    from llm import llm
+
+    azure_llm = llm.get_langchain_llm()
+    return azure_llm.with_structured_output(RouterVerdict), "azure_openai"
 
 
 def classify_and_maybe_answer(query: str) -> dict:
@@ -131,37 +155,37 @@ def classify_and_maybe_answer(query: str) -> dict:
     """
     if _mentions_uploaded_document(query):
         logger.info(
-            "Ollama pre-router: query references an uploaded document - forcing COMPLEX without calling Ollama."
+            "Pre-router: query references an uploaded document - forcing COMPLEX."
         )
         return {"classification": "complex", "answer": ""}
 
     if _mentions_database_query(query):
         logger.info(
-            "Ollama pre-router: query references database content - forcing COMPLEX without calling Ollama."
+            "Pre-router: query references database content - forcing COMPLEX."
         )
         return {"classification": "complex", "answer": ""}
 
     try:
+        structured_llm, provider = _get_structured_llm()
         with observe_span(
-            "ollama_router",
+            "pre_router",
             input_data={"query": query},
             metadata={
-                "provider": "ollama",
-                "model": OLLAMA_MODEL,
+                "provider": provider,
+                "model": OLLAMA_MODEL if provider == "ollama" else "azure_openai",
                 "route": "pre_router",
             },
             as_type="chain",
-            provider="ollama",
-            model=OLLAMA_MODEL,
+            provider=provider,
         ) as span:
-            structured_llm = _get_structured_llm()
             verdict: RouterVerdict = structured_llm.invoke(
                 _ROUTER_PROMPT.format(query=query)
             )
             logger.info(
-                "Ollama pre-router verdict: classification=%s answer=%r",
+                "Pre-router verdict (%s): classification=%s answer=%r",
+                provider,
                 verdict.classification,
-                verdict.answer[:80],
+                (verdict.answer or "")[:80],
             )
 
             classification = verdict.classification
@@ -169,7 +193,7 @@ def classify_and_maybe_answer(query: str) -> dict:
 
             if classification == "simple" and not answer:
                 logger.info(
-                    "Ollama pre-router: classified simple but answer was empty - downgrading to complex."
+                    "Pre-router: classified simple but answer was empty - downgrading to complex."
                 )
                 classification = "complex"
 
@@ -178,8 +202,7 @@ def classify_and_maybe_answer(query: str) -> dict:
                 span.update(
                     output=result,
                     metadata={
-                        "provider": "ollama",
-                        "model": OLLAMA_MODEL,
+                        "provider": provider,
                         "route": "pre_router",
                         "classification": classification,
                     },
@@ -188,7 +211,7 @@ def classify_and_maybe_answer(query: str) -> dict:
 
     except Exception as e:
         logger.warning(
-            "Ollama pre-router unavailable or failed (%s) - falling back to full crew pipeline.",
+            "Pre-router execution failed (%s) - falling back to full crew pipeline.",
             e,
         )
         return {"classification": "complex", "answer": ""}
