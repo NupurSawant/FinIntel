@@ -39,24 +39,27 @@ def _readonly_connection():
     return get_readonly_connection()
 
 
-def ingest_sql_file(file_path: str) -> dict:
+def ingest_sql_content(sql_text: str) -> dict:
     """
-    Executes an uploaded .sql file (schema + data) using the admin
+    Executes SQL content string (schema + data) using the admin
     connection. Runs inside a transaction - if anything in the script
     fails, nothing is committed.
     """
-    with open(file_path, "r", encoding="utf-8") as f:
-        sql_text = f.read()
-
     conn = _admin_connection()
     try:
         with conn, conn.cursor() as cur:
             cur.execute(sql_text)
-        logger.info("Ingested SQL file: %s", file_path)
+        logger.info("Ingested SQL content successfully.")
     finally:
         conn.close()
 
     return {"tables": list_tables()}
+
+
+def ingest_sql_file(file_path: str) -> dict:
+    with open(file_path, "r", encoding="utf-8-sig") as f:
+        sql_text = f.read()
+    return ingest_sql_content(sql_text)
 
 
 def list_tables() -> list[str]:

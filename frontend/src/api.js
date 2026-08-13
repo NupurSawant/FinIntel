@@ -238,17 +238,32 @@ export async function uploadSql(file, token, username) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE_URL}/sql/ingest`, {
-    method: "POST",
-    headers: getAuthHeaders(token, username),
-    body: formData,
-  });
+  try {
+    const res = await fetch(`${API_BASE_URL}/sql/ingest`, {
+      method: "POST",
+      headers: getAuthHeaders(token, username),
+      body: formData,
+    });
 
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.detail || "SQL ingestion failed");
+    const contentType = res.headers.get("content-type") || "";
+    let data;
+    if (contentType.includes("application/json")) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      data = { detail: text || `Server error (${res.status})` };
+    }
+
+    if (!res.ok) {
+      throw new Error(data.detail || `SQL ingestion failed (${res.status})`);
+    }
+    return data;
+  } catch (err) {
+    if (err.name === "TypeError" && err.message === "Failed to fetch") {
+      throw new Error("Could not connect to backend server or upload was blocked by CORS/network.");
+    }
+    throw err;
   }
-  return data;
 }
 
 export const PHASE_LABELS = {

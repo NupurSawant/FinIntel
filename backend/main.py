@@ -58,7 +58,12 @@ from Services.SLO_Metrics_Service import (
     record_query_metric,
     reset_slo_metrics,
 )
-from Services.SQL_Service import get_schema_description, ingest_sql_file, list_tables
+from Services.SQL_Service import (
+    get_schema_description,
+    ingest_sql_content,
+    ingest_sql_file,
+    list_tables,
+)
 
 SQL_UPLOAD_DIR = os.getenv("SQL_UPLOAD_DIR", "./data/sql_uploads")
 
@@ -87,7 +92,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -495,14 +500,27 @@ async def ingest_sql(
     if not file.filename.lower().endswith(".sql"):
         raise HTTPException(status_code=400, detail="Only .sql files are supported.")
 
-    os.makedirs(SQL_UPLOAD_DIR, exist_ok=True)
-    dest_path = os.path.join(SQL_UPLOAD_DIR, file.filename)
+    try:
+        content_bytes = await file.read()
+        sql_text = content_bytes.decode("utf-8-sig", errors="replace")
+    except Exception as e:
+        logger.exception("Failed to read uploaded SQL file content")
+        raise HTTPException(status_code=400, detail=f"Could not read SQL file: {e}")
+
+    # Optional local save (safe fallback if disk is read-only)
+    try:
+        os.makedirs(SQL_UPLOAD_DIR, exist_ok=True)
+        dest_path = os.path.join(SQL_UPLOAD_DIR, file.filename)
+        with open(dest_path, "wb") as f:
+            f.write(content_bytes)
+    except Exception as e:
+        logger.warning(
+            "Could not write uploaded SQL file to local disk (likely serverless/read-only environment): %s",
+            e,
+        )
 
     try:
-        content = await file.read()
-        with open(dest_path, "wb") as f:
-            f.write(content)
-        result = ingest_sql_file(dest_path)
+        result = ingest_sql_content(sql_text)
     except Exception as e:
         logger.exception("SQL ingestion failed")
         raise HTTPException(status_code=500, detail=f"SQL ingestion failed: {e}")
