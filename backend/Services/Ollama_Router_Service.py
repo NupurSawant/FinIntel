@@ -77,6 +77,61 @@ _DATABASE_QUERY_KEYWORDS = [
 ]
 
 
+_ACTIONABLE_RECOMMENDATION_KEYWORDS = [
+    "top",
+    "best",
+    "recommend",
+    "recommendation",
+    "recommendations",
+    "advice",
+    "advise",
+    "suggest",
+    "suggestion",
+    "give me",
+    "which",
+    "where should i",
+    "how to invest",
+    "how should i",
+    "performer",
+    "performers",
+    "compare",
+    "comparison",
+    "analysis",
+    "historical",
+    "log",
+    "logs",
+    "holding",
+    "holdings",
+    "portfolio",
+    "portfolios",
+    "database",
+    "document",
+    "report",
+    "pdf",
+    "my",
+    "our",
+    "asset_risk_logs",
+    "portfolio_holdings",
+    "investment_decisions",
+    "market_indicators",
+]
+
+_GREETING_WORDS = {
+    "hi",
+    "hello",
+    "hey",
+    "greetings",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "namaste",
+    "thanks",
+    "thank you",
+    "bye",
+    "goodbye",
+}
+
+
 def _mentions_uploaded_document(query: str) -> bool:
     lowered = query.lower()
     return any(kw in lowered for kw in _DOCUMENT_REFERENCE_KEYWORDS)
@@ -87,33 +142,40 @@ def _mentions_database_query(query: str) -> bool:
     return any(kw in lowered for kw in _DATABASE_QUERY_KEYWORDS)
 
 
+def _is_actionable_query(query: str) -> bool:
+    lowered = query.lower().strip()
+    return any(kw in lowered for kw in _ACTIONABLE_RECOMMENDATION_KEYWORDS)
+
+
+def _is_simple_greeting(query: str) -> bool:
+    cleaned = query.strip().lower().rstrip("!.,?")
+    return cleaned in _GREETING_WORDS
+
+
 class RouterVerdict(BaseModel):
     classification: Literal["simple", "complex"] = Field(
         ...,
         description=(
-            "'simple' for greetings, small talk, or generic definitional/educational "
-            "questions answerable from general knowledge with no internal portfolio, "
-            "document, or market data needed. 'complex' for anything referencing "
-            "'our' portfolio/holdings, an uploaded document/report, specific tickers "
-            "or live prices, risk exposure, benchmark comparisons, or multi-step "
-            "financial reasoning."
+            "'simple' for greetings, small talk, or general educational/definitional "
+            "questions (e.g. 'what is a mutual fund?'). 'complex' for any actionable investment "
+            "recommendations, top performers, stock queries, portfolio analysis, or multi-step reasoning."
         ),
     )
     answer: str = Field(
         "",
         description=(
-            "If classification is 'simple', a direct 2-4 sentence plain-language "
-            "answer. If classification is 'complex', leave this empty."
+            "If classification is 'simple', a clear, helpful 2-4 sentence plain-language "
+            "explanation or friendly response. If classification is 'complex', leave this completely empty."
         ),
     )
 
 
 USE_OLLAMA = os.getenv("USE_OLLAMA", "true").lower() in ("true", "1", "yes")
 
-_ROUTER_PROMPT = """Classify this message as SIMPLE or COMPLEX, and if SIMPLE, answer it.
+_ROUTER_PROMPT = """Classify this message as SIMPLE or COMPLEX, and if SIMPLE, provide a clear answer:
 
-SIMPLE examples: "hello", "hi", "thanks", "what is a mutual fund?", "explain diversification"
-COMPLEX examples: "what are the top risk factors in our tech portfolio?", "summarize the report I uploaded", "how is AAPL doing today?"
+SIMPLE examples: "hello", "hi", "thanks", "what is a mutual fund?", "explain diversification", "what is SIP?"
+COMPLEX examples: "give me top performers in SIPs", "how to invest 10000 per month", "summarize tech portfolio risk", "how is AAPL doing today?"
 
 Message: {query}"""
 
@@ -153,6 +215,13 @@ def classify_and_maybe_answer(query: str) -> dict:
     Always returns a dict - never raises - callers can safely fall back
     to the full crew pipeline on any failure.
     """
+    if _is_simple_greeting(query):
+        logger.info("Pre-router: simple greeting detected.")
+        return {
+            "classification": "simple",
+            "answer": "Hello! I am your AI Financial Assistant. How can I help you with your investment portfolio, market analysis, or risk evaluation today?",
+        }
+
     if _mentions_uploaded_document(query):
         logger.info(
             "Pre-router: query references an uploaded document - forcing COMPLEX."
@@ -162,6 +231,12 @@ def classify_and_maybe_answer(query: str) -> dict:
     if _mentions_database_query(query):
         logger.info(
             "Pre-router: query references database content - forcing COMPLEX."
+        )
+        return {"classification": "complex", "answer": ""}
+
+    if _is_actionable_query(query):
+        logger.info(
+            "Pre-router: query contains actionable recommendation/portfolio request - forcing COMPLEX."
         )
         return {"classification": "complex", "answer": ""}
 
@@ -191,11 +266,9 @@ def classify_and_maybe_answer(query: str) -> dict:
             classification = verdict.classification
             answer = (verdict.answer or "").strip()
 
-            if classification == "simple" and not answer:
-                logger.info(
-                    "Pre-router: classified simple but answer was empty - downgrading to complex."
-                )
-                classification = "complex"
+            if classification == "simple":
+                if not answer or answer.upper() in ("TRUE", "FALSE", "SIMPLE", "COMPLEX") or len(answer) < 5:
+                    answer = "Hello! I am your AI Financial Assistant. How can I help you with your investment portfolio, market analysis, or risk evaluation today?"
 
             result = {"classification": classification, "answer": answer}
             if span is not None:
