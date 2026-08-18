@@ -22,6 +22,7 @@ ALGORITHMS = [os.getenv("ALGORITHMS", "RS256")]
 ROLE_NAMESPACE = os.getenv("AUTH0_ROLE_NAMESPACE", "https://stateful-agent.com/roles")
 AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID", "jbou043FS30WMGkcEanZXq4VdYMKbS8d")
 AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET", "9YVJSiPRpu_ydXKXamKYMEiAdxyh4O_hdxBfqyLFRsHeDCQ_fzfWPTemutb1ftui")
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if os.getenv("VERCEL") or os.getenv("IS_DEPLOYED") == "true" or os.getenv("RENDER"):
     SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "/tmp/finance.db")
 else:

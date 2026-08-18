@@ -175,7 +175,7 @@ USE_OLLAMA = os.getenv("USE_OLLAMA", "true").lower() in ("true", "1", "yes")
 _ROUTER_PROMPT = """Classify this message as SIMPLE or COMPLEX, and if SIMPLE, provide a clear answer:
 
 SIMPLE examples: "hello", "hi", "thanks", "what is a mutual fund?", "explain diversification", "what is SIP?"
-COMPLEX examples: "give me top performers in SIPs", "how to invest 10000 per month", "summarize tech portfolio risk", "how is AAPL doing today?"
+COMPLEX examples: "give me top performers in SIPs", "how to invest 10000 per month", "summarize tech sector market risks", "how is AAPL doing today?"
 
 Message: {query}"""
 

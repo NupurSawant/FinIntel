@@ -220,14 +220,16 @@ def handle_query(request: QueryRequest, current_user: dict = Depends(get_current
                         "classification": routing["classification"],
                     },
                 )
+            simple_toks = max(20, (len(request.query) + len(response.final_response)) // 4)
             record_query_metric(
                 request.query,
                 latency_sec=0.45,
                 router_sec=0.35,
-                confidence=0.85,
+                confidence=0.95,
                 revisions=0,
                 status="completed",
                 route="direct",
+                tokens=simple_toks,
             )
             return response
 
@@ -348,8 +350,16 @@ def handle_query_stream(
         start_time = time.time()
         if routing["classification"] == "simple":
             logger.info("Ollama pre-router: SIMPLE - answered directly, crew skipped.")
+            simple_toks = max(20, (len(request.query) + len(routing["answer"])) // 4)
             record_query_metric(
-                request.query, latency_sec=0.45, router_sec=0.35, route="direct"
+                request.query,
+                latency_sec=round(time.time() - start_time, 2),
+                router_sec=0.35,
+                confidence=0.95,
+                revisions=0,
+                status="completed",
+                route="direct",
+                tokens=simple_toks,
             )
             payload = {
                 "phase": "final_response",

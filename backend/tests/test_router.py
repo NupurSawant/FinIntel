@@ -19,6 +19,7 @@ def test_document_reference_keywords():
 def test_database_query_keywords():
     assert _mentions_database_query("Select all rows from portfolio_holdings") is True
     assert _mentions_database_query("Show sql table records") is True
+    assert _mentions_database_query("Give me the top 5 asset names by risk score from the portfolio database") is True
     assert _mentions_database_query("What is asset allocation?") is False
 
 

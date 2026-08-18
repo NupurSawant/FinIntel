@@ -13,7 +13,7 @@ from Services.SLO_Metrics_Service import (
 def test_slo_metrics_record_and_aggregate():
     record_guardrail_block()
     record_query_metric(
-        query="What are portfolio risk drivers?",
+        query="What are major global market risk drivers?",
         latency_sec=1.85,
         router_sec=0.32,
         confidence=0.88,

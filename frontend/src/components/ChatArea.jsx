@@ -180,7 +180,7 @@ export default function ChatArea({
             <p className="text-sm text-slate-600 leading-relaxed">
               Hi — ask me something like{" "}
               <span className="italic text-slate-800 font-medium">
-                &quot;What are the key risks in the current investment portfolio?&quot;
+                &quot;What are the key market risks affecting the tech sector today?&quot;
               </span>{" "}
               or{" "}
               <span className="italic text-slate-800 font-medium">

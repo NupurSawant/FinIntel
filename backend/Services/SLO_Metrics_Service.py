@@ -129,6 +129,9 @@ def record_query_metric(
     tokens: int = 1200,
     agent_latencies: dict[str, float] | None = None,
 ):
+    if route in ("direct", "simple", "direct_ollama", "ollama") and tokens == 1200:
+        tokens = max(20, (len(query) + 150) // 4)
+
     _metrics_cache["total_queries"] += 1
     _metrics_cache["total_latency_sec"] += latency_sec
     _metrics_cache["router_latency_sec"] += router_sec

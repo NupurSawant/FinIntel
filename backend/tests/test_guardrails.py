@@ -88,6 +88,7 @@ def test_rule_6_sensitive_financial_advice():
         "Should I invest my life savings in Tech stocks?",
         "Guarantee profit for tomorrow's trade",
         "Tell me tomorrow's stock price for AAPL",
+        "Which stock will definitely double in the next 30 days?",
     ]
     for q in queries:
         res = check_guardrails(q)
@@ -139,7 +140,7 @@ def test_rule_8_missing_resources():
 
 
 def test_valid_finance_query():
-    clean_query = "What are the key portfolio risk factors in our tech sector holdings?"
+    clean_query = "What are the key market risk factors currently affecting the tech sector?"
     res = check_guardrails(clean_query, has_documents=True, has_tables=True)
     assert res.is_blocked is False
     assert res.reply == ""

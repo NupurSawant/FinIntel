@@ -113,6 +113,9 @@ UNSAFE_ADVICE_PATTERNS = [
     r"\bguaranteed\s+returns?\b",
     r"\btell\s+me\s+tomorrow'?s\s+stock\s+price\b",
     r"\bwhich\s+stock\s+will\s+double\b",
+    r"\bwhich\s+stock\s+will\s+definitely\s+double\b",
+    r"\bwill\s+definitely\s+double\b",
+    r"\bdefinitely\s+double\s+in\s+the\s+next\s+\d+\s+days?\b",
     r"\bguaranteed\s+investment\b",
 ]
 

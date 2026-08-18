@@ -12,10 +12,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 logger = logging.getLogger("finance_workflow")
 
-DEFAULT_RECIPIENT = "sawant.nupur25@gmail.com"
-ESCALATIONS_DIR = os.getenv("ESCALATIONS_DIR", "./data/escalations")
+DEFAULT_RECIPIENT = os.getenv("HUMAN_REVIEW_EMAIL", "sawant.nupur25@gmail.com")
+ESCALATIONS_DIR = os.getenv("ESCALATIONS_DIR", os.path.join(".", "data", "escalations"))
 
 
 def send_escalation_email(
@@ -142,12 +146,19 @@ Please review this query manually and provide guidance if necessary.
         logger.error(f"Failed to write escalation log: {e}")
 
     # 2. Attempt SMTP transmission if SMTP settings are in environment
-    smtp_server = os.getenv("SMTP_SERVER", "")
+    smtp_server = os.getenv("SMTP_SERVER", "").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USERNAME", "")
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    smtp_user = os.getenv("SMTP_USERNAME", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip() or os.getenv("SMTP_APP_PASSWORD", "").strip()
+    smtp_use_ssl = os.getenv("SMTP_USE_SSL", "true" if smtp_port == 465 else "false").strip().lower() in {"1", "true", "yes", "on"}
+
+    if not smtp_server and recipient_email.lower().endswith("@gmail.com"):
+        smtp_server = "smtp.gmail.com"
+        if smtp_port == 587:
+            smtp_use_ssl = False
 
     sent_via_smtp = False
+    delivery_message = "Escalation notification logged locally; no email was sent."
     if smtp_server and smtp_user and smtp_password:
         try:
             msg = MIMEMultipart("alternative")
@@ -158,25 +169,45 @@ Please review this query manually and provide guidance if necessary.
             msg.attach(MIMEText(plain_body, "plain"))
             msg.attach(MIMEText(html_body, "html"))
 
-            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(smtp_user, [recipient_email], msg.as_string())
+            if smtp_use_ssl:
+                with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=10) as server:
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, [recipient_email], msg.as_string())
+            else:
+                with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                    server.ehlo()
+                    if server.has_extn("STARTTLS"):
+                        server.starttls()
+                        server.ehlo()
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, [recipient_email], msg.as_string())
 
             logger.info(f"Escalation email successfully sent to {recipient_email}")
             sent_via_smtp = True
+            delivery_message = f"Escalation email dispatched to {recipient_email}."
         except Exception as e:
             logger.warning(
                 f"SMTP email dispatch failed ({e}). Logged locally to {log_filepath}"
             )
+            delivery_message = (
+                f"SMTP delivery failed for {recipient_email}; the escalation was logged locally at {log_filepath}."
+            )
     else:
-        logger.info(
-            f"SMTP not configured. Escalation notification logged to {log_filepath} for {recipient_email}"
+        logger.warning(
+            "SMTP not configured for escalation mail delivery. "
+            "Set SMTP_SERVER, SMTP_USERNAME, and SMTP_PASSWORD in your environment or .env file. "
+            f"Escalation was logged locally to {log_filepath}."
+        )
+        delivery_message = (
+            "SMTP is not configured, so the escalation was logged locally and no email was sent. "
+            "Add SMTP_SERVER, SMTP_USERNAME, and SMTP_PASSWORD (or SMTP_APP_PASSWORD for Gmail) to enable email delivery."
         )
 
     return {
         "status": "escalated",
         "recipient": recipient_email,
         "sent_via_smtp": sent_via_smtp,
+        "email_sent": sent_via_smtp,
         "log_file": log_filepath,
+        "message": delivery_message,
     }

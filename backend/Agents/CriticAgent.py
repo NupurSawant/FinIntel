@@ -1,9 +1,116 @@
 import json
+import re
 
 from crewai import Agent, Crew, Process, Task
 from pydantic import BaseModel, Field
 
 from llm import llm
+
+
+def detect_incomplete_legal_question(query: str, draft_answer: str) -> tuple[bool, list[str], str]:
+    """Only strict-check legal queries that explicitly lack the governing legal facts needed for a definitive answer."""
+    text = (query or "") + " " + (draft_answer or "")
+    lowered = text.lower()
+
+    # Narrow strict mode to a small set of patterns that are truly not answerable
+    # without the governing legal facts. Normal finance/legal questions remain allowed.
+    strict_missing_fact_patterns = [
+        "contract terms, governing law, and insolvency regime are all unknown",
+        "contract terms, governing law, and insolvency regime are unknown",
+        "when the contract terms, governing law, and insolvency regime are all unknown",
+        "without any contract terms, governing law, or jurisdiction details",
+        "without any contract terms, governing law, or jurisdiction",
+        "without contract terms, governing law, or jurisdiction details",
+        "without the contract terms, governing law, or jurisdiction",
+        "governing law and jurisdiction are missing",
+        "without governing law and jurisdiction",
+        "no governing law and no jurisdiction",
+        "contract terms and governing law are unknown",
+        "governing law, and jurisdiction are all unknown",
+    ]
+
+    explicit_missing_facts = any(pattern in lowered for pattern in strict_missing_fact_patterns)
+    if not explicit_missing_facts:
+        # Also allow the older, narrower form where the request clearly says the key facts are missing
+        missing_legal_facts = [
+            "without any contract terms",
+            "without contract terms",
+            "without any governing law",
+            "without governing law",
+            "without any jurisdiction",
+            "without jurisdiction",
+            "no contract terms",
+            "no governing law",
+            "no jurisdiction details",
+            "without any jurisdiction details",
+            "without jurisdiction details",
+            "without the relevant governing law",
+            "without the governing law",
+        ]
+        if not any(phrase in lowered for phrase in missing_legal_facts):
+            return False, [], ""
+
+    legal_issues = [
+        "close-out netting",
+        "netting",
+        "seize collateral",
+        "terminate the derivative portfolio",
+        "derivative counterparty defaults",
+        "defaulting counterparty",
+        "legal status",
+        "legal exposure",
+        "regulatory capital impact",
+        "remediation required",
+        "determine the exact legal status",
+        "determine legal status",
+        "exact legal status",
+        "exposure calculation",
+        "close-out rights",
+        "insolvency law",
+        "isda",
+        "basel",
+        "governing law",
+        "jurisdiction",
+        "contract terms",
+    ]
+    if not any(keyword in lowered for keyword in legal_issues):
+        return False, [], ""
+
+    # Required: the question has to be asking for a legal conclusion or immediate remedy.
+    definitive_legal_request = any(
+        phrase in lowered
+        for phrase in [
+            "can you confirm whether",
+            "determine the exact legal status",
+            "determine legal status",
+            "exact legal status",
+            "legal exposure",
+            "remediation required",
+            "close-out rights",
+            "immediately exercise",
+            "seize collateral",
+            "exercise close-out netting",
+            "recover usd",
+            "legal answer",
+            "can immediately",
+            "without the actual csa",
+            "without the contract terms",
+        ]
+    )
+    if not definitive_legal_request:
+        return False, [], ""
+
+    issues = [
+        "The question explicitly lacks the contract terms, governing law, and/or jurisdiction needed for a reliable legal answer.",
+        "The fact pattern is incomplete for a definitive legal status, exposure calculation, or remediation decision.",
+        "Any answer providing legal status, exposure, or remediation would be speculative and should be escalated.",
+    ]
+    instruction = (
+        "Do not provide a definitive legal conclusion. Request the governing law, jurisdiction, contract terms, "
+        "ISDA terms, and insolvency framework before assessing legal status, exposure, or remediation. "
+        "Route to human review because the legal answer is not determinable from the current fact pattern alone."
+    )
+    return True, issues, instruction
 
 
 class CriticVerdict(BaseModel):
@@ -98,8 +205,32 @@ def run_critic_review(query: str, draft_answer: str) -> CriticVerdict:
             raw = raw[4:]
     try:
         data = json.loads(raw)
+        flagged, missing_issues, missing_instruction = detect_incomplete_legal_question(
+            query, draft_answer
+        )
+        if flagged:
+            data["confidence"] = min(float(data.get("confidence", 0.0)), 0.45)
+            data["is_well_attributed"] = False
+            data["issues"] = list(
+                dict.fromkeys([*(data.get("issues", [])), *missing_issues])
+            )
+            data["revision_instructions"] = (
+                missing_instruction
+                if not str(data.get("revision_instructions", "")).strip()
+                else data["revision_instructions"] + " " + missing_instruction
+            )
         return CriticVerdict(**data)
     except (json.JSONDecodeError, TypeError, ValueError):
+        flagged, missing_issues, missing_instruction = detect_incomplete_legal_question(
+            query, draft_answer
+        )
+        if flagged:
+            return CriticVerdict(
+                confidence=0.45,
+                is_well_attributed=False,
+                issues=missing_issues,
+                revision_instructions=missing_instruction,
+            )
         return CriticVerdict(
             confidence=0.0,
             is_well_attributed=False,

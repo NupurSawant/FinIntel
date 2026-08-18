@@ -37,12 +37,22 @@ def human_handoff_node(state: GraphState) -> GraphState:
         )
 
         # 2. Construct user notification response
+        if email_res.get("email_sent"):
+            delivery_message = (
+                f"An escalation alert email has been dispatched to `{DEFAULT_RECIPIENT}` containing the "
+                f"query details, flagged critic issues, and agent analysis for manual financial review."
+            )
+        else:
+            delivery_message = (
+                f"The escalation was logged locally for human review, but no email was sent because SMTP is not configured. "
+                f"Set SMTP_SERVER, SMTP_USERNAME, and SMTP_PASSWORD (or SMTP_APP_PASSWORD for Gmail) to enable live delivery."
+            )
+
         escalation_notice = (
             f"⚠️ **Query Escalated for Human Review**\n\n"
             f"Your query required specialized financial review as the confidence score ({confidence:.2f}) "
             f"did not reach the required threshold after {revise_count} revision attempts.\n\n"
-            f"An escalation alert email has been dispatched to `{DEFAULT_RECIPIENT}` containing the "
-            f"query details, flagged critic issues, and agent analysis for manual financial review.\n\n"
+            f"{delivery_message}\n\n"
             f"**Draft Specialist Analysis:**\n"
             f"{draft_answer}"
         )

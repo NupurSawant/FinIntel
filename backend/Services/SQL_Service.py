@@ -124,6 +124,9 @@ def run_readonly_query(query: str) -> str:
       1. This regex check, before anything reaches Postgres
       2. default_transaction_read_only=on on the connection itself
       3. The finance_readonly role's DB-level grants (SELECT only)
+
+    Returned output is formatted for clear human reading instead of a raw
+    pipe-delimited dump.
     """
     stripped = query.strip().rstrip(";")
 
@@ -147,15 +150,30 @@ def run_readonly_query(query: str) -> str:
         return "Query executed successfully but returned no rows."
 
     columns = list(rows[0].keys())
-    header = "| " + " | ".join(columns) + " |"
-    separator = "| " + " | ".join(["---"] * len(columns)) + " |"
-    lines = [header, separator]
-    for row in rows[:50]:
-        lines.append(
-            "| "
-            + " | ".join(str(row[c]) if row[c] is not None else "" for c in columns)
-            + " |"
-        )
-    if len(rows) > 50:
-        lines.append(f"\n*(Note: {len(rows) - 50} additional rows truncated)*")
+    preview_rows = rows[:10]
+
+    def display_value(value):
+        if value is None:
+            return "NULL"
+        if isinstance(value, float):
+            return f"{value:,.2f}"
+        return str(value)
+
+    lines = []
+    lines.append("Query executed successfully.")
+    lines.append(f"Returned {len(rows)} row(s) across {len(columns)} column(s).")
+    lines.append(f"Columns: {', '.join(columns)}")
+    lines.append("")
+    lines.append("Result preview:")
+    lines.append("| " + " | ".join(columns) + " |")
+    lines.append("| " + " | ".join(["---"] * len(columns)) + " |")
+
+    for row in preview_rows:
+        formatted = [display_value(row.get(c)) for c in columns]
+        lines.append("| " + " | ".join(formatted) + " |")
+
+    if len(rows) > 10:
+        lines.append("")
+        lines.append(f"Note: {len(rows) - 10} additional rows are truncated in this preview.")
+
     return "\n".join(lines)
