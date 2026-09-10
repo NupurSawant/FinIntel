@@ -24,7 +24,7 @@ from Services.Conversation_Service import (
 )
 from Services.DB_Service import get_admin_connection, get_readonly_connection
 from Services.Market_Service import MarketService
-from Services.Ollama_Router_Service import classify_and_maybe_answer
+from Services.Groq_Router_Service import classify_and_maybe_answer
 from Services.RAG_Service import RAGService
 from Services.SQL_Service import run_readonly_query
 from Utils.ticker_extractor import extract_tickers
@@ -244,7 +244,7 @@ class _FakeLangfuse:
 
 
 def test_router_helpers_and_fallback(monkeypatch):
-    monkeypatch.setattr("Services.Ollama_Router_Service._is_simple_greeting", lambda q: q.strip().lower() in {"hello", "hi"})
+    monkeypatch.setattr("Services.Groq_Router_Service._is_simple_greeting", lambda q: q.strip().lower() in {"hello", "hi"})
     assert classify_and_maybe_answer("hello")["classification"] == "simple"
     assert classify_and_maybe_answer("What is the uploaded PDF about?")["classification"] == "complex"
     assert classify_and_maybe_answer("Show me portfolio_holdings from database")["classification"] == "complex"
@@ -252,7 +252,7 @@ def test_router_helpers_and_fallback(monkeypatch):
     def bad_llm():
         raise RuntimeError("down")
 
-    monkeypatch.setattr("Services.Ollama_Router_Service._get_structured_llm", bad_llm)
+    monkeypatch.setattr("Services.Groq_Router_Service._get_structured_llm", bad_llm)
     result = classify_and_maybe_answer("What is diversification?")
     assert result["classification"] == "complex"
     assert result["answer"] == ""

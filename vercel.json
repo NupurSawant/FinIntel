@@ -1,6 +1,12 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "buildCommand": "cd frontend && npm ci && npm run build",
+  "functions": {
+    "api/index.py": {
+      "runtime": "vercel-python@6.0.0",
+      "maxDuration": 60
+    }
+  },
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {

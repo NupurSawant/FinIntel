@@ -4,29 +4,24 @@ users directly against Auth0 (nupursawant.us.auth0.com).
 """
 
 import hashlib
+import logging
 import os
-import sqlite3
 import time
 from typing import Any
 
-import psycopg2
 import requests
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "secret12345678900987654321")
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "nupursawant.us.auth0.com")
-API_AUDIENCE = os.getenv("API_AUDIENCE", "https://api.finance-intelligence.com")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET", "")
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "")
+API_AUDIENCE = os.getenv("API_AUDIENCE", "")
 ALGORITHMS = [os.getenv("ALGORITHMS", "RS256")]
 ROLE_NAMESPACE = os.getenv("AUTH0_ROLE_NAMESPACE", "https://stateful-agent.com/roles")
-AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID", "jbou043FS30WMGkcEanZXq4VdYMKbS8d")
-AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET", "9YVJSiPRpu_ydXKXamKYMEiAdxyh4O_hdxBfqyLFRsHeDCQ_fzfWPTemutb1ftui")
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.getenv("VERCEL") or os.getenv("IS_DEPLOYED") == "true" or os.getenv("RENDER"):
-    SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "/tmp/finance.db")
-else:
-    SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", os.path.join(_BASE_DIR, "data", "db", "finance.db"))
+AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID", "")
+AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET", "")
+logger = logging.getLogger("finance_workflow")
 
 JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json" if AUTH0_DOMAIN else ""
 security = HTTPBearer(auto_error=False)
@@ -39,21 +34,11 @@ from Services.DB_Service import get_admin_connection
 
 
 def _sync_postgres_user(name: str, email: str, password_hash: str):
-    """Syncs user details into PostgreSQL database (Neon DB if deployed, local Postgres if offline)."""
+    """Create or update a user in the required managed PostgreSQL database."""
+    conn = get_admin_connection()
     try:
-        conn = get_admin_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                verified BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """)
-        cursor.execute(
+        with conn.cursor() as cursor:
+            cursor.execute(
             """
             INSERT INTO users (name, email, password_hash, verified)
             VALUES (%s, %s, %s, TRUE)
@@ -62,39 +47,18 @@ def _sync_postgres_user(name: str, email: str, password_hash: str):
                 password_hash = EXCLUDED.password_hash;
             """,
             (name, email, password_hash),
-        )
+            )
         conn.commit()
-        cursor.close()
+    except Exception:
+        conn.rollback()
+        logger.exception("Failed to persist user %s in PostgreSQL", email)
+        raise
+    finally:
         conn.close()
-    except Exception:
-        pass
-
-
-def _init_users_table():
-    try:
-        os.makedirs(os.path.dirname(SQLITE_DB_PATH), exist_ok=True)
-        with sqlite3.connect(SQLITE_DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    email TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    verified INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-                """)
-            conn.commit()
-    except Exception:
-        pass
-
-
-_init_users_table()
 
 
 def register_user(name: str, email: str, password: str) -> dict[str, Any]:
-    """Registers a new user via Auth0 dbconnections/signup and stores credentials in SQLite."""
+    """Register a user through Auth0 and persist credentials in PostgreSQL."""
     clean_name = name.strip()
     clean_email = email.strip().lower()
 
@@ -113,23 +77,12 @@ def register_user(name: str, email: str, password: str) -> dict[str, Any]:
             detail="Password must be at least 6 characters long.",
         )
 
-    # 1. Always store/update user credentials in PostgreSQL and SQLite databases
+    # Persist before returning success; PostgreSQL is the durable source of truth.
     pwd_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
     _sync_postgres_user(clean_name, clean_email, pwd_hash)
-    try:
-        os.makedirs(os.path.dirname(SQLITE_DB_PATH), exist_ok=True)
-        with sqlite3.connect(SQLITE_DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
-                (clean_name, clean_email, pwd_hash),
-            )
-            conn.commit()
-    except Exception:
-        pass
 
     # 2. Attempt Auth0 registration
-    client_id = AUTH0_CLIENT_ID or "jbou043FS30WMGkcEanZXq4VdYMKbS8d"
+    client_id = AUTH0_CLIENT_ID
     url = f"https://{AUTH0_DOMAIN}/dbconnections/signup"
     payload = {
         "client_id": client_id,
@@ -158,8 +111,8 @@ def register_user(name: str, email: str, password: str) -> dict[str, Any]:
                         "email": clean_email,
                         "requires_verification": False,
                     }
-            except Exception:
-                pass
+            except requests.RequestException:
+                logger.warning("Auth0 registration request failed for %s", clean_email, exc_info=True)
     except Exception:
         pass
 
@@ -179,14 +132,21 @@ def update_user_profile(
     """Updates user display name and/or password with old password verification."""
     clean_user = user_id.strip().lower()
 
-    with sqlite3.connect(SQLITE_DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?",
-            (clean_user, clean_user),
+    conn = get_admin_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, name, email, password_hash FROM users "
+                "WHERE LOWER(email) = %s OR LOWER(name) = %s",
+                (clean_user, clean_user),
+            )
+            row = cursor.fetchone()
+        user = (
+            {"id": row[0], "name": row[1], "email": row[2], "password_hash": row[3]}
+            if row else None
         )
-        user = cursor.fetchone()
+    finally:
+        conn.close()
 
     if new_password:
         if not old_password:
@@ -223,48 +183,21 @@ def update_user_profile(
             else (user["name"] if user else clean_user)
         )
 
-        with sqlite3.connect(SQLITE_DB_PATH) as conn:
-            cursor = conn.cursor()
-            if user:
-                cursor.execute(
-                    "UPDATE users SET name = ?, password_hash = ? WHERE id = ?",
-                    (updated_name, new_hash, user["id"]),
-                )
-            else:
-                cursor.execute(
-                    "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
-                    (updated_name, clean_user, new_hash),
-                )
-            conn.commit()
-
         _sync_postgres_user(updated_name, clean_user, new_hash)
         return {"message": "Profile updated successfully.", "name": updated_name}
 
     if name and name.strip():
         updated_name = name.strip()
-        with sqlite3.connect(SQLITE_DB_PATH) as conn:
-            cursor = conn.cursor()
-            if user:
-                cursor.execute(
-                    "UPDATE users SET name = ? WHERE id = ?", (updated_name, user["id"])
-                )
-            else:
-                dummy_hash = hashlib.sha256(b"nopassword").hexdigest()
-                cursor.execute(
-                    "INSERT INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
-                    (updated_name, clean_user, dummy_hash),
-                )
-            conn.commit()
-
-        _sync_postgres_user(
-            updated_name, clean_user, hashlib.sha256(b"nopassword").hexdigest()
-        )
+        password_hash = user["password_hash"] if user else hashlib.sha256(b"nopassword").hexdigest()
+        _sync_postgres_user(updated_name, clean_user, password_hash)
         return {"message": "Profile name updated successfully.", "name": updated_name}
 
     return {"message": "No changes made.", "name": user["name"] if user else clean_user}
 
 
-def create_local_access_token(sub: str) -> str:
+def create_access_token(sub: str) -> str:
+    if not JWT_SECRET_KEY:
+        raise RuntimeError("JWT_SECRET is required for application authentication.")
     payload = {
         "sub": sub,
         "roles": ["user"],
@@ -273,78 +206,24 @@ def create_local_access_token(sub: str) -> str:
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
 
 
-def _verify_local_db_user(username: str, password: str) -> dict[str, Any] | None:
+def _verify_database_user(username: str, password: str) -> dict[str, Any] | None:
     clean_user = username.strip().lower()
     pwd_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
 
-    # 1. Try PostgreSQL users table (Neon DB in deployed mode, local Postgres in offline mode)
+    conn = get_admin_connection()
     try:
-        conn = get_admin_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT email, password_hash FROM users WHERE LOWER(email) = %s OR LOWER(name) = %s;",
-                    (clean_user, clean_user),
-                )
-                row = cur.fetchone()
-                if row:
-                    db_email, db_hash = row[0], row[1]
-                    if db_hash == pwd_hash or db_hash == password:
-                        token = create_local_access_token(db_email)
-                        return {"access_token": token, "username": db_email}
-                else:
-                    # Auto-provision user in PostgreSQL users table on Neon DB
-                    if "@" in clean_user and len(password) >= 4:
-                        name_part = clean_user.split("@")[0].capitalize()
-                        cur.execute(
-                            """
-                            INSERT INTO users (name, email, password_hash, verified)
-                            VALUES (%s, %s, %s, TRUE)
-                            ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash;
-                            """,
-                            (name_part, clean_user, pwd_hash),
-                        )
-                        conn.commit()
-                        token = create_local_access_token(clean_user)
-                        return {"access_token": token, "username": clean_user}
-        finally:
-            conn.close()
-    except Exception as e:
-        logger.warning("PostgreSQL login check warning: %s", e)
-
-    # 2. Try SQLite users table
-    try:
-        if os.path.exists(SQLITE_DB_PATH):
-            with sqlite3.connect(SQLITE_DB_PATH) as conn:
-                conn.row_factory = sqlite3.Row
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT email, password_hash FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?",
-                    (clean_user, clean_user),
-                )
-                row = cur.fetchone()
-                if row:
-                    if row["password_hash"] == pwd_hash or row["password_hash"] == password:
-                        token = create_local_access_token(row["email"])
-                        return {"access_token": token, "username": row["email"]}
-                else:
-                    if "@" in clean_user and len(password) >= 4:
-                        cur.execute(
-                            "INSERT OR REPLACE INTO users (name, email, password_hash, verified) VALUES (?, ?, ?, 1)",
-                            (clean_user.split("@")[0].capitalize(), clean_user, pwd_hash),
-                        )
-                        conn.commit()
-                        token = create_local_access_token(clean_user)
-                        return {"access_token": token, "username": clean_user}
-    except Exception:
-        pass
-
-    # 3. Fail-safe token generation for valid email format
-    if "@" in clean_user and len(password) >= 4:
-        token = create_local_access_token(clean_user)
-        return {"access_token": token, "username": clean_user}
-
-    return None
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT email, password_hash FROM users "
+                "WHERE LOWER(email) = %s OR LOWER(name) = %s",
+                (clean_user, clean_user),
+            )
+            row = cur.fetchone()
+        if row and (row[1] == pwd_hash or row[1] == password):
+            return {"access_token": create_access_token(row[0]), "username": row[0]}
+        return None
+    finally:
+        conn.close()
 
 
 def authenticate_with_auth0(username: str, password: str) -> dict[str, Any]:
@@ -357,8 +236,8 @@ def authenticate_with_auth0(username: str, password: str) -> dict[str, Any]:
         )
 
     # 1. Attempt Auth0 OAuth authentication
-    client_id = AUTH0_CLIENT_ID or "jbou043FS30WMGkcEanZXq4VdYMKbS8d"
-    client_secret = AUTH0_CLIENT_SECRET or "9YVJSiPRpu_ydXKXamKYMEiAdxyh4O_hdxBfqyLFRsHeDCQ_fzfWPTemutb1ftui"
+    client_id = AUTH0_CLIENT_ID
+    client_secret = AUTH0_CLIENT_SECRET
     url = f"https://{AUTH0_DOMAIN}/oauth/token"
     headers = {"content-type": "application/json"}
 
@@ -400,13 +279,16 @@ def authenticate_with_auth0(username: str, password: str) -> dict[str, Any]:
                     "access_token": access_token,
                     "username": username,
                 }
-    except Exception:
-        pass
+    except requests.RequestException:
+        logger.warning("Auth0 authentication request failed for %s", username, exc_info=True)
 
-    # 2. Resilient Database & Auto-Provision Fallback
-    local_res = _verify_local_db_user(username, password)
-    if local_res:
-        return local_res
+    try:
+        database_result = _verify_database_user(username, password)
+    except Exception:
+        logger.exception("PostgreSQL authentication lookup failed for %s", username)
+        raise HTTPException(status_code=503, detail="Authentication service unavailable.")
+    if database_result:
+        return database_result
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -481,7 +363,7 @@ def get_current_user(
         except Exception:
             pass
 
-        # 2. Fallback: local JWT token (HS256)
+        # Accept the application's signed session token.
         try:
             payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
             sub = payload.get("sub")
@@ -497,15 +379,6 @@ def get_current_user(
             )
         except JWTError:
             pass
-
-    # 3. Fallback: check X-User header
-    x_user = request.headers.get("X-User") or request.headers.get("x-user")
-    if x_user:
-        return {
-            "id": x_user.strip(),
-            "roles": ["user"],
-            "raw_claims": {"sub": x_user.strip()},
-        }
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

@@ -7,7 +7,7 @@
 ### What Is This Project About?
 The **Finance Risk and Investment Intelligent System** is an enterprise-grade, multi-agent AI system engineered to perform automated financial market analysis, portfolio risk assessment, semantic document retrieval (RAG), and read-only SQL database querying. 
 
-It combines real-time financial market data (via YFinance and Tavily Web Search), vector semantic search over financial documents (via Qdrant and Azure OpenAI Embeddings), structured SQL database analytics (via PostgreSQL), and autonomous multi-agent reasoning (via CrewAI and LangGraph).
+It combines real-time financial market data (via YFinance and Tavily Web Search), vector semantic search over financial documents (via Qdrant Cloud and Google AI Studio embeddings), structured SQL database analytics (via managed PostgreSQL), and autonomous multi-agent reasoning (via CrewAI and LangGraph).
 
 ### Why Are We Doing This? (Problem Statement & Value Proposition)
 1. **Data Fragmentation in Finance**: Financial analysts must manually cross-reference market prices, SEC filings, internal PDF reports, and SQL portfolio databases. This process is time-consuming and error-prone.
@@ -19,7 +19,7 @@ It combines real-time financial market data (via YFinance and Tavily Web Search)
 - **Multi-Agent Specialization**: Autonomous specialized agents (`MarketAgent`, `RiskAgent`, `RAGAgent`, `SQLAgent`) supervised by a `ManagerAgent`.
 - **Autonomous Critic Verification Loop**: Every draft answer is audited by a `CriticAgent` that computes a confidence score (0.0 to 1.0). Answers falling below threshold are revised automatically.
 - **Human Escalation Safety Net**: If confidence remains low after 3 revision attempts, the system logs audit records and dispatches an escalation email to human reviewers (`sawant.nupur25@gmail.com`).
-- **Hybrid Dual-Engine Pre-Router**: Simple queries bypass the heavy multi-agent crew, responding in < 0.5 seconds via local Ollama or Azure OpenAI.
+- **Groq Pre-Router**: Simple queries bypass the heavy multi-agent crew, while all routing and agent text generation use the same Groq API configuration.
 - **Triply-Guarded SQL Execution**: Read-only database access enforced via regex checks, connection flags, and PostgreSQL role grants.
 
 ---
@@ -31,10 +31,10 @@ It combines real-time financial market data (via YFinance and Tavily Web Search)
 | **Frontend UI** | React 18, Vite 6, TailwindCSS, Lucide Icons, Markdown Renderer (`react-markdown`), LaTeX KaTeX (`rehype-katex`), Server-Sent Events (SSE) streaming reader. |
 | **Backend Framework** | Python 3.13, FastAPI 0.121, Uvicorn 0.38, Pydantic V2, `python-dotenv`. |
 | **Multi-Agent Orchestration** | LangGraph 1.0 (State Machine Graph), CrewAI 1.8 (Role-based Autonomous Agents). |
-| **Primary LLM & Vision** | Azure OpenAI `gpt-4o-mini` (Text generation & Manager/Agents/Critic), Azure OpenAI Vision `gpt-4o-mini` (PDF Chart & Figure multimodal analysis). |
-| **Embeddings & Vector Store** | Azure OpenAI `text-embedding-3-small` (1536-dim vectors), Qdrant Vector Database (Cloud + Local disk fallback). |
-| **Pre-Router Engines** | Local Ollama (`llama3.2:3b`) on `localhost`, Azure OpenAI `gpt-4o-mini` in cloud deployment. |
-| **Databases & Storage** | PostgreSQL 16 (Financial DB), SQLite 3 (`./data/db/finance.db` for Auth & User storage), Local disk storage (`./data/documents`, `./data/sql_uploads`, `./data/escalations`). |
+| **Primary LLM** | Groq OpenAI-compatible API (configured with `GROQ_API_KEY` and `GROQ_MODEL`) for text generation, routing, and Manager/Agents/Critic calls. |
+| **Embeddings & Vision** | Google AI Studio Gemini embeddings and vision (`GOOGLE_API_KEY`, `GOOGLE_EMBEDDING_MODEL`, `GOOGLE_VISION_MODEL`). |
+| **Vector Store** | Qdrant Cloud (`QDRANT_URL`, `QDRANT_API_KEY`); Vercel filesystem storage is ephemeral and is not a durable document store. |
+| **Databases & Storage** | Managed PostgreSQL/Neon (`DATABASE_URL`) for authentication, conversations, metrics, and SQL data. Temporary upload files use Vercel `/tmp` only during a request. |
 | **Data Tools & Web Search** | YFinance API, Tavily Web Search API, PyMuPDF (`fitz`), `python-docx`, `scikit-learn`, `psycopg2-binary`. |
 | **Security & Auth** | Auth0 OAuth2 Password-Realm API, JWT decoding (`pyjwt`, `python-jose`, `cryptography`), Passlib + bcrypt, Custom 8-Layer Guardrail Engine. |
 | **Observability & Metrics** | Langfuse Cloud SDK (`observe_span`), Custom SLO Metrics Engine. |
@@ -50,20 +50,20 @@ sequenceDiagram
     participant React as React Frontend
     participant API as FastAPI Backend
     participant Auth0 as Auth0 Cloud API
-    participant SQLite as Local SQLite DB
+    participant PostgreSQL as Managed PostgreSQL
 
     User->>React: Register (Name, Email, Password)
     React->>API: POST /auth/register
     API->>Auth0: POST /dbconnections/signup
     Auth0-->>API: User Created & Verification Email Sent
-    API->>SQLite: Persist local user record & email status
+    API->>PostgreSQL: Persist user record and email status
     API-->>React: 200 OK (Requires Email Verification)
 
     User->>React: Login (Email, Password)
     React->>API: POST /auth/login
     API->>Auth0: POST /oauth/token (Password Grant)
     Auth0-->>API: Return JWT Access Token
-    API->>SQLite: Verify or update local sync record
+    API->>PostgreSQL: Verify or update user record
     API-->>React: Return JWT Access Token + Display Name
 
     User->>React: Authenticated API Requests
@@ -73,7 +73,7 @@ sequenceDiagram
 
 ### Key Auth Features:
 1. **Auth0 Email Verification**: Registration calls Auth0 `dbconnections/signup`, triggering a real verification email. Unverified users are blocked from logging in.
-2. **Local Profile Sync**: User profiles, display names, and password updates are synchronized in `./data/db/finance.db`.
+2. **Managed Profile Storage**: User profiles, display names, and password updates are stored in managed PostgreSQL.
 3. **Multi-Tenant Isolation**: All chat history (`conversations`), messages, uploaded RAG documents, and metrics are isolated per authenticated user ID.
 
 ---
@@ -116,7 +116,7 @@ Every query is inspected across 8 distinct guardrail filters before any LLM exec
 
 ---
 
-## 5. Dual-Engine Hybrid Pre-Router (`Services/Ollama_Router_Service.py`)
+## 5. Groq Pre-Router (`backend/Services/Groq_Router_Service.py`)
 
 To optimize system latency, queries are classified as `SIMPLE` or `COMPLEX`:
 
@@ -124,8 +124,7 @@ To optimize system latency, queries are classified as `SIMPLE` or `COMPLEX`:
 If a query contains document keywords (`pdf`, `document`, `report`, `attached`, `manual`) or database keywords (`sql`, `table`, `column`, `portfolio_holdings`), the router **forces COMPLEX** immediately without calling the LLM.
 
 ### Routing Execution:
-- **Localhost**: Uses local Ollama (`llama3.2:3b`) with a 2-second connection timeout. If simple, Ollama answers directly in < 0.5s.
-- **Cloud Deployment**: Uses Azure OpenAI (`gpt-4o-mini`). If simple, Azure OpenAI answers directly in < 0.5s, skipping the 5-agent CrewAI graph.
+- **Deployment**: Uses the shared Groq OpenAI-compatible client and `GROQ_API_KEY`. Simple queries can skip the 5-agent CrewAI graph.
 
 ---
 
@@ -145,7 +144,7 @@ graph TD
     Risk --> RiskCalc[Scikit-learn / Math Models]
 
     RAG --> PyMuPDF[PyMuPDF Text & Markdown Tables]
-    RAG --> Vision[Azure OpenAI Vision API]
+    RAG --> Vision[Google AI Studio Gemini Vision API]
     RAG --> Qdrant[Qdrant Vector Store]
 
     SQL --> PGDB[(PostgreSQL Read-Only DB)]
@@ -231,7 +230,7 @@ Exposed via REST API endpoints:
 
 ## 9. Complete Step-by-Step Execution Flow
 
-1. **User Action**: User submits a message in the React UI (`http://localhost:3000` or deployed Vercel URL).
+1. **User Action**: User submits a message in the React UI deployed on Vercel.
 2. **API Call**: `sendQueryStream()` in `frontend/src/api.js` POSTs to `/query/stream` with `query` and `conversation_id`.
 3. **Authentication**: `get_current_user` in `backend/Services/Auth_Service.py` validates the JWT token.
 4. **Conversation History**: `add_message()` saves the user's prompt in `./data/db/finance.db`.
@@ -256,7 +255,7 @@ Exposed via REST API endpoints:
 
 - **Auth & Profile Modal**: Login, Register, Verification Notice, Edit Display Name, Update Password, JWT Session Management.
 - **Conversation Management**: New Chat, Switch Active Conversation, Auto-generate Title from First Message, Delete Chat.
-- **RAG Document Engine**: Multi-file Drag & Drop Upload (`.pdf`, `.docx`, `.txt`), PyMuPDF Markdown Table Conversion, Azure Vision AI Chart Description, Qdrant Vector Indexing, Document Deletion.
+- **RAG Document Engine**: Multi-file Drag & Drop Upload (`.pdf`, `.docx`, `.txt`), PyMuPDF Markdown Table Conversion, Gemini Vision Chart Description, Qdrant Cloud Vector Indexing, Document Deletion.
 - **SQL Database Engine**: `.sql` File Ingestion (`ingest_sql_file`), Automated PostgreSQL Schema Extraction, Triply-Guarded Read-Only Execution (`run_readonly_query`), Automatic Markdown Table Formatting.
 - **SLO Performance Dashboard**: Real-time Modal displaying overall latency, simple/complex latency, confidence distribution, guardrail block categories, and revision rates.
 - **Observability**: Complete trace instrumentation powered by Langfuse SDK (`observe_span`).

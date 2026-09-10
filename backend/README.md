@@ -1,22 +1,20 @@
-Run the API:
+# Finance Risk Intelligence API
 
-uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+The API is deployed as a Vercel Python function (`/api/index.py`). The React
+app and API are built and served by Vercel.
 
-Langfuse Cloud observability:
+## Vercel environment variables
 
-- Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY in your environment or .env.
-- Every /query request now creates Langfuse observations for the HTTP request, router, graph execution, crew execution, critic review, and route decision.
-- In Langfuse Cloud you will see:
-  - input and output payloads
-  - latency for each step
-  - provider/model information (Ollama for the router, CrewAI/LangGraph for the workflow)
-  - the selected execution path and the specialist agent used by the crew
+Required: `GROQ_API_KEY`, `GROQ_MODEL` (default `llama-3.3-70b-versatile`),
+`GOOGLE_API_KEY`, `GOOGLE_EMBEDDING_MODEL` (default
+`models/text-embedding-004`), `GOOGLE_VISION_MODEL` (default
+`gemini-2.0-flash`), `DATABASE_URL` (Neon/PostgreSQL), `QDRANT_URL`, and
+`QDRANT_API_KEY`.
 
-QDrant API Key = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6MzA0MDA5MjgtZmYwNy00ZWI4LWIxOTEtMjA1OGY3MDc4NGY0In0.FvftdSNUyJD5R06B1om5Hak2ybS3gArF_z28wVZyByA
+Also configure `JWT_SECRET` and any enabled integration keys
+(`TAVILY_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`). Never commit
+values; use Vercel Project Settings or `vercel env`.
 
-Cluster Endpoint = https://b9ad2bff-698a-4bf4-988f-30a63aaf6f43.eu-central-1-0.aws.cloud.qdrant.io
-
-Cluster ID - b9ad2bff-698a-4bf4-988f-30a63aaf6f43
-
-
-ollama run llama3.2
+PostgreSQL/Neon is required for durable users, conversations, and SQL data.
+Qdrant Cloud is required for document vectors. Uploaded files use ephemeral
+`/tmp` storage and must not be treated as durable.

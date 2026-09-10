@@ -1,40 +1,40 @@
+"""Shared provider configuration for every chat, agent, and router call.
+
+The deployment uses Groq's OpenAI-compatible API for text generation.  Keeping
+construction here ensures agents and the pre-router cannot accidentally use a
+different provider or credentials.
+"""
+
 import os
 
 from crewai import LLM as CrewLLM
 from dotenv import load_dotenv
-from langchain_openai import AzureChatOpenAI
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 
 class LLM:
-    azure_endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    azure_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
-    azure_deployment: str = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
-    azure_api_version: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    groq_base_url: str = "https://api.groq.com/openai/v1"
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", 0.70))
     MAX_REVISE_RETRIES: int = int(os.getenv("MAX_REVISE_RETRIES", 3))
 
-    def get_llm(self, deployment_name: str = None) -> CrewLLM:
-        deployment = deployment_name or self.azure_deployment or "gpt-4o-mini"
+    def get_llm(self, deployment_name: str | None = None) -> CrewLLM:
         return CrewLLM(
-            model=f"azure/{deployment}",
-            api_key=self.azure_api_key,
-            base_url=self.azure_endpoint,
-            api_version=self.azure_api_version,
+            model=f"groq/{deployment_name or self.groq_model}",
+            api_key=self.groq_api_key,
+            base_url=self.groq_base_url,
         )
 
-    def get_langchain_llm(self, deployment_name: str = None) -> AzureChatOpenAI:
-        deployment = deployment_name or self.azure_deployment or "gpt-4o-mini"
-        return AzureChatOpenAI(
-            azure_endpoint=self.azure_endpoint,
-            api_key=self.azure_api_key,
-            azure_deployment=deployment,
-            api_version=self.azure_api_version,
+    def get_langchain_llm(self, deployment_name: str | None = None) -> ChatOpenAI:
+        return ChatOpenAI(
+            model=deployment_name or self.groq_model,
+            api_key=self.groq_api_key,
+            base_url=self.groq_base_url,
             temperature=0,
         )
 

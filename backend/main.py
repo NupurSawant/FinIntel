@@ -50,7 +50,7 @@ from Services.Conversation_Service import (
     maybe_set_title_from_first_message,
 )
 from Services.Guardrail_Service import check_guardrails
-from Services.Ollama_Router_Service import classify_and_maybe_answer
+from Services.Groq_Router_Service import classify_and_maybe_answer
 from Services.RAG_Service import DOCUMENTS_DIR, SUPPORTED_EXTENSIONS, rag_service
 from Services.SLO_Metrics_Service import (
     get_aggregated_slo_metrics,
@@ -65,15 +65,7 @@ from Services.SQL_Service import (
     list_tables,
 )
 
-SQL_UPLOAD_DIR = os.getenv("SQL_UPLOAD_DIR", "./data/sql_uploads")
-
-
-# Suppress Azure HTTP request/response logs
-logging.getLogger("azure").setLevel(logging.WARNING)
-logging.getLogger("azure.core.pipeline").setLevel(logging.WARNING)
-logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
-    logging.WARNING
-)
+SQL_UPLOAD_DIR = os.getenv("SQL_UPLOAD_DIR", "/tmp/sql_uploads")
 
 logger = logging.getLogger("finance_workflow")
 logging.basicConfig(level=getattr(logging, llm.LOG_LEVEL, logging.INFO))
@@ -193,7 +185,7 @@ def handle_query(request: QueryRequest, current_user: dict = Depends(get_current
     ) as span:
         routing = classify_and_maybe_answer(request.query)
         if routing["classification"] == "simple":
-            logger.info("Ollama pre-router: SIMPLE - answered directly, crew skipped.")
+            logger.info("Groq pre-router: SIMPLE - answered directly, crew skipped.")
             response = QueryResponse(
                 status="completed",
                 final_response=routing["answer"],
@@ -216,7 +208,7 @@ def handle_query(request: QueryRequest, current_user: dict = Depends(get_current
                     metadata={
                         "provider": "http",
                         "endpoint": "/query",
-                        "used_provider": "ollama",
+                        "used_provider": "groq",
                         "classification": routing["classification"],
                     },
                 )
@@ -349,7 +341,7 @@ def handle_query_stream(
     def event_generator():
         start_time = time.time()
         if routing["classification"] == "simple":
-            logger.info("Ollama pre-router: SIMPLE - answered directly, crew skipped.")
+            logger.info("Groq pre-router: SIMPLE - answered directly, crew skipped.")
             simple_toks = max(20, (len(request.query) + len(routing["answer"])) // 4)
             record_query_metric(
                 request.query,
@@ -517,7 +509,7 @@ async def ingest_sql(
         logger.exception("Failed to read uploaded SQL file content")
         raise HTTPException(status_code=400, detail=f"Could not read SQL file: {e}")
 
-    # Optional local save (safe fallback if disk is read-only)
+    # Optional ephemeral upload save for document ingestion
     try:
         os.makedirs(SQL_UPLOAD_DIR, exist_ok=True)
         dest_path = os.path.join(SQL_UPLOAD_DIR, file.filename)
@@ -525,7 +517,7 @@ async def ingest_sql(
             f.write(content_bytes)
     except Exception as e:
         logger.warning(
-            "Could not write uploaded SQL file to local disk (likely serverless/read-only environment): %s",
+            "Could not write ephemeral upload for SQL ingestion: %s",
             e,
         )
 

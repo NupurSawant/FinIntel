@@ -1,32 +1,18 @@
-# Finance Risk & Investment Intelligence — React Frontend
+# Finance Risk Intelligence frontend
 
-A modern React + Vite + Tailwind CSS frontend for the Finance Risk & Investment Intelligence FastAPI backend.
+This React/Vite app is deployed with the FastAPI function to Vercel. The
+repository is intentionally Vercel-only; configure the deployment in Vercel
+and do not run a separate local backend.
 
-## Features
+## Environment variables
 
-- **Authentication**: Email + password login with persistent Auth token in `localStorage` (survives page refreshes).
-- **Sidebar Layout**:
-  - **User Profile**: Avatar badge, username display, and Logout action.
-  - **Conversations**: Create new chats ("➕ New Chat"), switch between active conversations, and delete chats ("×").
-  - **Documents (RAG)**: Multi-file uploader (.pdf, .docx, .txt), ingestion feedback, and list of indexed documents with deletion capability.
-  - **Database (SQL)**: Ingest `.sql` database schema and view current database tables.
-- **Main Chat Area**:
-  - Real-time SSE query streaming with live multi-agent phase tracking (Crew -> Critic -> Route decision -> Final response).
-  - Graceful fallback to non-streaming REST endpoint if stream interrupted.
-  - Role-based chat bubbles and status indicators.
+Set these in Vercel Project Settings: `GROQ_API_KEY`,
+`GROQ_MODEL=llama-3.3-70b-versatile`, `GOOGLE_API_KEY`,
+`GOOGLE_EMBEDDING_MODEL=models/text-embedding-004`,
+`GOOGLE_VISION_MODEL=gemini-2.0-flash`, `DATABASE_URL`, `QDRANT_URL`,
+`QDRANT_API_KEY`, and `JWT_SECRET`. Optional integrations are
+`TAVILY_API_KEY`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY`.
 
-## Running Locally
-
-### 1. Start the FastAPI Backend
-```bash
-cd ../backend
-uvicorn main:app --reload
-```
-By default, the backend runs on `http://localhost:8000`.
-
-### 2. Start the React Dev Server
-```bash
-npm install
-npm run dev
-```
-Open `http://localhost:3000` (or `http://localhost:5173`) in your browser.
+Neon/PostgreSQL and Qdrant Cloud are required for durable state. Upload
+processing may use ephemeral Vercel `/tmp` storage; uploaded files themselves
+are not persisted on local disk.

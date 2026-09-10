@@ -27,7 +27,7 @@ def test_slo_metrics_record_and_aggregate():
     metrics = get_aggregated_slo_metrics()
 
     assert "end_to_end_response_time" in metrics
-    assert "ollama_routing_time" in metrics
+    assert "router_time" in metrics
     assert "individual_agent_latency text" not in metrics
     assert "individual_agent_latency" in metrics
     assert "critic_revision_rate" in metrics

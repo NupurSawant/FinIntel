@@ -1,8 +1,8 @@
 """
 RAG Service - Qdrant-backed ingestion and retrieval pipeline.
 
-Replaces the earlier TF-IDF implementation with real vector embeddings
-(Azure OpenAI) stored in Qdrant, giving semantic search instead of pure
+Replaces the earlier TF-IDF implementation with real Google embeddings
+stored in Qdrant Cloud, giving semantic search instead of pure
 keyword overlap. Public interface (search, ingest_file, remove_file,
 list_documents, overview) is unchanged from the TF-IDF version, so
 RAGSearchTool / RAGAgent / main.py require zero changes.
@@ -25,28 +25,29 @@ from llm import llm
 
 logger = logging.getLogger("finance_workflow")
 
-DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "./data/uploads")
+DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "/tmp/finintel-uploads")
 SUPPORTED_EXTENSIONS = {".txt", ".pdf", ".docx"}
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-QDRANT_API_KEY = os.getenv(
-    "QDRANT_API_KEY"
-)  # None for local Docker, set for Qdrant Cloud
+QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "finance_documents")
 
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv(
-    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"
-)
-EMBEDDING_DIM = int(
-    os.getenv("EMBEDDING_DIM", "1536")
-)  # 1536 for text-embedding-3-small / ada-002
+GOOGLE_EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
+GOOGLE_VISION_MODEL = os.getenv("GOOGLE_VISION_MODEL", "gemini-2.0-flash")
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "768"))
 
 
 def _analyze_image_with_vision(image_bytes: bytes) -> str:
-    """Uses Azure OpenAI Vision (gpt-4o-mini) to describe charts, figures, tables, and images."""
+    """Uses Google AI Studio Gemini to describe charts, figures, tables, and images."""
     try:
         b64_str = base64.b64encode(image_bytes).decode("utf-8")
-        vision_llm = llm.get_langchain_llm()
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        vision_llm = ChatGoogleGenerativeAI(
+            model=GOOGLE_VISION_MODEL,
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            temperature=0,
+        )
         message = HumanMessage(
             content=[
                 {
@@ -70,7 +71,7 @@ def _analyze_image_with_vision(image_bytes: bytes) -> str:
 
 
 def _extract_multimodal_pdf(file_path: str) -> str:
-    """Multimodal PDF parser using PyMuPDF and Azure OpenAI Vision.
+    """Multimodal PDF parser using PyMuPDF and Gemini Vision.
     Extracts text, structured markdown tables, and AI vision summaries for visual figures & charts.
     """
     doc = fitz.open(file_path)
@@ -180,20 +181,18 @@ def _chunk_text(text: str, chunk_size: int = 400, overlap: int = 80) -> list[str
 
 
 class EmbeddingClient:
-    """Thin wrapper around Azure OpenAI embeddings, isolated so it's swappable/mockable."""
+    """Thin wrapper around Google AI Studio embeddings."""
 
     def __init__(self):
         self._model = None
 
     def _get_model(self):
         if self._model is None:
-            from langchain_openai import AzureOpenAIEmbeddings
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-            self._model = AzureOpenAIEmbeddings(
-                azure_deployment=AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
-                api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
-                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            self._model = GoogleGenerativeAIEmbeddings(
+                model=GOOGLE_EMBEDDING_MODEL,
+                google_api_key=os.getenv("GOOGLE_API_KEY"),
             )
         return self._model
 
@@ -226,18 +225,18 @@ class RAGService:
         if client:
             self._client = client
             self._ensure_collection()
+        elif not QDRANT_URL or not QDRANT_API_KEY:
+            # Keep the Vercel function import-safe; fail clearly when RAG is used
+            # without its required managed vector store configuration.
+            self._client = None
         else:
             try:
                 self._client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
                 self._ensure_collection()
             except Exception as e:
-                logger.warning(
-                    f"Could not connect to Qdrant cloud at {QDRANT_URL}: {e}. Falling back to local Qdrant storage."
-                )
-                qdrant_path = os.getenv("QDRANT_PATH", "./data/qdrant_db")
-                os.makedirs(qdrant_path, exist_ok=True)
-                self._client = QdrantClient(path=qdrant_path)
-                self._ensure_collection()
+                raise RuntimeError(
+                    "Qdrant Cloud is required. Set QDRANT_URL and QDRANT_API_KEY."
+                ) from e
 
     def _ensure_collection(self):
         existing = [c.name for c in self._client.get_collections().collections]

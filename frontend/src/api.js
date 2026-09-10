@@ -1,12 +1,5 @@
 function getApiBaseUrl() {
-  if (typeof window !== "undefined") {
-    const hostname = window.location.hostname;
-    // When running locally on localhost, ALWAYS use the local backend server
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
-      return "http://localhost:8000";
-    }
-  }
-  // When deployed live, use VITE_API_BASE_URL if set, or relative URL "" for vercel/host rewrites
+  // Vercel rewrites API paths to the Python function on the same origin.
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }

@@ -102,7 +102,7 @@ def get_schema_description() -> str:
             conn.close()
     except Exception as e:
         logger.warning("PostgreSQL connection unavailable: %s", e)
-        return "No tables currently exist in the database. Database is currently unconfigured or offline."
+        return "No tables currently exist in the database. Database is currently unconfigured."
 
     if not rows:
         return "No tables currently exist in the database. No SQL file has been uploaded yet."

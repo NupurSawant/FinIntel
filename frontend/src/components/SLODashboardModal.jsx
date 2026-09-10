@@ -21,8 +21,8 @@ import { getSLOMetrics, resetSLOMetrics } from "../api";
 const METRIC_DESCRIPTIONS = {
   end_to_end_response_time:
     "Total latency (in seconds) measured from the moment a user submits a query to the exact millisecond the final answer is rendered.",
-  ollama_routing_time:
-    "Latency of the Ollama Llama 3.2 pre-classifier step that evaluates whether a query is simple conversational vs. complex financial.",
+  router_time:
+    "Latency of the Groq pre-router step that evaluates whether a query is simple conversational vs. complex financial.",
   individual_agent_latency:
     "Execution time breakdown (in seconds) spent inside each individual multi-agent node: Manager, Risk, Market, SQL, RAG, and Critic.",
   critic_revision_rate:
@@ -34,7 +34,7 @@ const METRIC_DESCRIPTIONS = {
   rag_retrieval_success:
     "Percentage of document RAG vector searches that successfully returned top-k relevant context chunks without error.",
   sql_success_rate:
-    "Percentage of generated database queries that executed cleanly against PostgreSQL / SQLite without syntax or schema errors.",
+    "Percentage of generated database queries that executed cleanly against PostgreSQL without syntax or schema errors.",
   market_api_success:
     "Success rate of real-time financial market data API fetches from Tavily Search & Yahoo Finance services.",
   guardrail_blocks:
@@ -44,7 +44,7 @@ const METRIC_DESCRIPTIONS = {
   error_rate:
     "Percentage of total API calls resulting in unhandled backend exceptions, 500 errors, or network connection timeouts.",
   cost_savings:
-    "Estimated total cost ($) saved by bypassing cloud LLM calls for simple queries using local Ollama Llama 3.2 pre-routing.",
+    "Estimated total cost ($) saved by bypassing cloud LLM calls for simple queries using Groq pre-routing.",
   average_tokens:
     "Average prompt plus completion token consumption per user query across all agent processing steps.",
 };
@@ -71,7 +71,7 @@ export default function SLODashboardModal({ isOpen, onClose, token, username }) 
     setResetting(true);
     setMetrics({
       end_to_end_response_time: 0.0,
-      ollama_routing_time: 0.0,
+      router_time: 0.0,
       individual_agent_latency: {
         Manager: 0.0,
         Risk: 0.0,
@@ -132,7 +132,7 @@ export default function SLODashboardModal({ isOpen, onClose, token, username }) 
               </h2>
               <p className="text-xs text-slate-400">
                 Real-time Service Level Objectives, Latency, Accuracy &amp; Efficiency
-                {lastRefreshed && <span className="ml-2 text-emerald-400">• Updated {lastRefreshed}</span>}
+                {lastRefreshed && <span className="ml-2 text-emerald-400">Ã¢â‚¬Â¢ Updated {lastRefreshed}</span>}
               </p>
             </div>
           </div>
@@ -194,11 +194,11 @@ export default function SLODashboardModal({ isOpen, onClose, token, username }) 
                     badge="Target < 5.0s"
                   />
 
-                  {/* Ollama Routing Time */}
+                  {/* Router Time */}
                   <MetricCard
-                    title="Ollama Routing Time"
-                    value={`${metrics?.ollama_routing_time ?? 0}s`}
-                    metricKey="ollama_routing_time"
+                    title="Router Time"
+                    value={`${metrics?.router_time ?? 0}s`}
+                    metricKey="router_time"
                     activeTooltip={activeTooltip}
                     setActiveTooltip={setActiveTooltip}
                     color="text-indigo-400"
@@ -389,7 +389,7 @@ export default function SLODashboardModal({ isOpen, onClose, token, username }) 
 
         {/* Footer */}
         <div className="p-3.5 px-6 border-t border-slate-800 flex items-center justify-between bg-slate-950/80 shrink-0 text-xs text-slate-400">
-          <span>Click any ℹ️ icon to view detailed metric calculations and formulas.</span>
+          <span>Click any Ã¢â€žÂ¹Ã¯Â¸Â icon to view detailed metric calculations and formulas.</span>
           <span className="text-[11px] text-slate-500"> </span>
         </div>
       </div>
