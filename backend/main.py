@@ -92,7 +92,16 @@ app.add_middleware(
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "ok"}
+    required = ("GROQ_API_KEY", "GOOGLE_API_KEY", "DATABASE_URL", "QDRANT_URL", "QDRANT_API_KEY", "JWT_SECRET")
+    missing = [name for name in required if not os.getenv(name)]
+    return {
+        "status": "ok" if not missing else "degraded",
+        "missing_configuration": missing,
+        "auth0_configured": all(
+            os.getenv(name)
+            for name in ("AUTH0_DOMAIN", "AUTH0_CLIENT_ID", "API_AUDIENCE")
+        ),
+    }
 
 
 @app.get("/slo/metrics", tags=["Metrics"])

@@ -1,9 +1,9 @@
 function getApiBaseUrl() {
-  // Vercel rewrites API paths to the Python function on the same origin.
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
-  }
-  return "";
+  // The production frontend is hosted on Vercel and the API is hosted on Render.
+  return (
+    import.meta.env.VITE_API_BASE_URL ||
+    "https://finintel-1afu.onrender.com"
+  ).replace(/\/$/, "");
 }
 
 const API_BASE_URL = getApiBaseUrl();

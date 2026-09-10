@@ -33,6 +33,10 @@ JWKS_CACHE_SECONDS = 60 * 60
 from Services.DB_Service import get_admin_connection
 
 
+def _auth0_is_configured() -> bool:
+    return bool(AUTH0_DOMAIN and AUTH0_CLIENT_ID and API_AUDIENCE)
+
+
 def _sync_postgres_user(name: str, email: str, password_hash: str):
     """Create or update a user in the required managed PostgreSQL database."""
     conn = get_admin_connection()
@@ -81,23 +85,23 @@ def register_user(name: str, email: str, password: str) -> dict[str, Any]:
     pwd_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
     _sync_postgres_user(clean_name, clean_email, pwd_hash)
 
-    # 2. Attempt Auth0 registration
-    client_id = AUTH0_CLIENT_ID
-    url = f"https://{AUTH0_DOMAIN}/dbconnections/signup"
-    payload = {
-        "client_id": client_id,
-        "email": clean_email,
-        "password": password,
-        "connection": "Username-Password-Authentication",
-        "user_metadata": {"name": clean_name},
-        "name": clean_name,
-    }
-    headers = {"content-type": "application/json"}
-
-    try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=10)
-        if not resp.ok:
-            try:
+    if _auth0_is_configured():
+        payload = {
+            "client_id": AUTH0_CLIENT_ID,
+            "email": clean_email,
+            "password": password,
+            "connection": "Username-Password-Authentication",
+            "user_metadata": {"name": clean_name},
+            "name": clean_name,
+        }
+        try:
+            resp = requests.post(
+                f"https://{AUTH0_DOMAIN}/dbconnections/signup",
+                json=payload,
+                headers={"content-type": "application/json"},
+                timeout=10,
+            )
+            if not resp.ok:
                 err_data = resp.json()
                 err_msg = (
                     err_data.get("description")
@@ -111,10 +115,9 @@ def register_user(name: str, email: str, password: str) -> dict[str, Any]:
                         "email": clean_email,
                         "requires_verification": False,
                     }
-            except requests.RequestException:
-                logger.warning("Auth0 registration request failed for %s", clean_email, exc_info=True)
-    except Exception:
-        pass
+                logger.warning("Auth0 registration was rejected for %s: %s", clean_email, err_msg)
+        except (requests.RequestException, ValueError):
+            logger.warning("Auth0 registration request failed for %s", clean_email, exc_info=True)
 
     return {
         "message": f"Registration successful for '{clean_email}'. You can now log in with your email and password.",
@@ -235,52 +238,51 @@ def authenticate_with_auth0(username: str, password: str) -> dict[str, Any]:
             detail="Email and password are required.",
         )
 
-    # 1. Attempt Auth0 OAuth authentication
-    client_id = AUTH0_CLIENT_ID
-    client_secret = AUTH0_CLIENT_SECRET
-    url = f"https://{AUTH0_DOMAIN}/oauth/token"
-    headers = {"content-type": "application/json"}
+    if _auth0_is_configured():
+        client_secret = AUTH0_CLIENT_SECRET
+        url = f"https://{AUTH0_DOMAIN}/oauth/token"
+        payload_realm = {
+            "grant_type": "http://auth0.com/oauth/grant-type/password-realm",
+            "username": username,
+            "password": password,
+            "realm": "Username-Password-Authentication",
+            "audience": API_AUDIENCE,
+            "client_id": AUTH0_CLIENT_ID,
+        }
+        if client_secret:
+            payload_realm["client_secret"] = client_secret
 
-    payload_realm = {
-        "grant_type": "http://auth0.com/oauth/grant-type/password-realm",
-        "username": username,
-        "password": password,
-        "realm": "Username-Password-Authentication",
-        "audience": API_AUDIENCE,
-        "client_id": client_id,
-    }
-    if client_secret:
-        payload_realm["client_secret"] = client_secret
-
-    try:
-        resp = requests.post(url, json=payload_realm, headers=headers, timeout=10)
-        if not resp.ok:
-            payload_conn = {
-                "grant_type": "password",
-                "username": username,
-                "password": password,
-                "connection": "Username-Password-Authentication",
-                "audience": API_AUDIENCE,
-                "client_id": client_id,
-            }
-            if client_secret:
-                payload_conn["client_secret"] = client_secret
-            resp_conn = requests.post(
-                url, json=payload_conn, headers=headers, timeout=10
+        try:
+            resp = requests.post(
+                url,
+                json=payload_realm,
+                headers={"content-type": "application/json"},
+                timeout=10,
             )
-            if resp_conn.ok:
-                resp = resp_conn
-
-        if resp.ok:
-            data = resp.json()
-            access_token = data.get("access_token")
-            if access_token:
-                return {
-                    "access_token": access_token,
+            if not resp.ok:
+                payload_conn = {
+                    "grant_type": "password",
                     "username": username,
+                    "password": password,
+                    "connection": "Username-Password-Authentication",
+                    "audience": API_AUDIENCE,
+                    "client_id": AUTH0_CLIENT_ID,
                 }
-    except requests.RequestException:
-        logger.warning("Auth0 authentication request failed for %s", username, exc_info=True)
+                if client_secret:
+                    payload_conn["client_secret"] = client_secret
+                resp_conn = requests.post(
+                    url, json=payload_conn, headers={"content-type": "application/json"}, timeout=10
+                )
+                if resp_conn.ok:
+                    resp = resp_conn
+
+            if resp.ok:
+                data = resp.json()
+                access_token = data.get("access_token")
+                if access_token:
+                    return {"access_token": access_token, "username": username}
+        except (requests.RequestException, ValueError):
+            logger.warning("Auth0 authentication request failed for %s", username, exc_info=True)
 
     try:
         database_result = _verify_database_user(username, password)
