@@ -30,9 +30,9 @@ SUPPORTED_EXTENSIONS = {".txt", ".pdf", ".docx"}
 
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
-QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "finance_documents")
+QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "finance_documents_gemini")
 
-GOOGLE_EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
+GOOGLE_EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001")
 GOOGLE_VISION_MODEL = os.getenv("GOOGLE_VISION_MODEL", "gemini-2.0-flash")
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "768"))
 
@@ -197,10 +197,14 @@ class EmbeddingClient:
         return self._model
 
     def embed_query(self, text: str) -> list[float]:
-        return self._get_model().embed_query(text)
+        return self._get_model().embed_query(
+            text, output_dimensionality=EMBEDDING_DIM
+        )
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._get_model().embed_documents(texts)
+        return self._get_model().embed_documents(
+            texts, output_dimensionality=EMBEDDING_DIM
+        )
 
 
 class RAGService:

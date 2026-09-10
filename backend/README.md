@@ -5,9 +5,9 @@ app and API are built and served by Vercel.
 
 ## Vercel environment variables
 
-Required: `GROQ_API_KEY`, `GROQ_MODEL` (default `llama-3.3-70b-versatile`),
+Required: `GROQ_API_KEY`, `GROQ_MODEL` (default `llama-3.1-8b-instant`),
 `GOOGLE_API_KEY`, `GOOGLE_EMBEDDING_MODEL` (default
-`models/text-embedding-004`), `GOOGLE_VISION_MODEL` (default
+`gemini-embedding-001`), `GOOGLE_VISION_MODEL` (default
 `gemini-2.0-flash`), `DATABASE_URL` (Neon/PostgreSQL), `QDRANT_URL`, and
 `QDRANT_API_KEY`.
 

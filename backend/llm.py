@@ -16,7 +16,7 @@ load_dotenv()
 
 class LLM:
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
-    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
