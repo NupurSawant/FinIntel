@@ -1,4 +1,5 @@
 import logging
+import os
 
 from crewai import Crew, Process, Task
 
@@ -43,6 +44,65 @@ _DATABASE_QUERY_KEYWORDS = [
 def _is_database_query(query: str) -> bool:
     lowered = query.lower()
     return any(kw in lowered for kw in _DATABASE_QUERY_KEYWORDS)
+
+
+def _is_document_query(query: str) -> bool:
+    if _is_database_query(query):
+        return False
+    lowered = query.lower()
+    return any(
+        keyword in lowered
+        for keyword in (
+            "document",
+            "attached",
+            "attachment",
+            "pdf",
+            "report",
+            "manual",
+            "policy",
+            "guideline",
+            "uploaded",
+        )
+    )
+
+
+def _run_google_document_answer(query: str) -> str:
+    """Answer document questions with Gemini, keeping Groq out of the RAG path."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    passages = rag_service.search(query, k=5)
+    if not passages:
+        passages = rag_service.overview(chunks_per_doc=2)
+
+    context_parts = []
+    remaining_chars = 14000
+    for passage in passages:
+        text = passage.get("text", "")[:3500]
+        part = f"Source: {passage.get('source', 'unknown')}\n{text}"
+        if len(part) > remaining_chars:
+            break
+        context_parts.append(part)
+        remaining_chars -= len(part)
+
+    if not context_parts:
+        return "I could not find any indexed content in the attached document."
+
+    model = os.getenv("GOOGLE_RAG_MODEL", "gemini-2.0-flash")
+    document_llm = ChatGoogleGenerativeAI(
+        model=model,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        temperature=0,
+    )
+    prompt = (
+        "Answer the user's question using only the supplied document passages. "
+        "For a summary, cover the main purpose, key topics, important findings, "
+        "risks or requirements, and practical conclusions. Cite source filenames. "
+        "If the passages do not support a claim, say that it is not stated.\n\n"
+        f"User question:\n{query}\n\nDocument passages:\n"
+        + "\n\n---\n\n".join(context_parts)
+    )
+    response = document_llm.invoke(prompt)
+    return str(response.content).strip()
 
 
 def build_finance_crew(query: str, revision_instructions: str = "") -> Crew:
@@ -200,6 +260,19 @@ def run_finance_crew(query: str, revision_instructions: str = "") -> str:
         as_type="agent",
         provider="crewai",
     ) as span:
+        if _is_document_query(query):
+            result = _run_google_document_answer(query)
+            if span is not None:
+                span.update(
+                    output={"result": result},
+                    metadata={
+                        "provider": "google_ai_studio",
+                        "workflow": "rag_document_answer",
+                        "model": os.getenv("GOOGLE_RAG_MODEL", "gemini-2.0-flash"),
+                    },
+                )
+            return result
+
         crew = build_finance_crew(query, revision_instructions)
         result = crew.kickoff()
         specialist_agent = _select_specialist_agent(
